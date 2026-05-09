@@ -17,7 +17,7 @@ type ChatMessage = {
   speaker: string
   speakerKey: string
   role: 'system' | 'player' | 'character' | 'narrator' | 'pending'
-  kind: 'opening' | 'dialogue' | 'clue'
+  kind: 'opening' | 'dialogue' | 'clue' | 'scene'
   tone?: string
   content: string
 }
@@ -166,6 +166,7 @@ function mapStructuredRole(role: ChatStreamStructuredMessage['role']): ChatMessa
 function mapStructuredKind(kind: ChatStreamStructuredMessage['kind']): ChatMessage['kind'] {
   if (kind === 'OPENING') return 'opening'
   if (kind === 'CLUE') return 'clue'
+  if (kind === 'SCENE') return 'scene'
   return 'dialogue'
 }
 

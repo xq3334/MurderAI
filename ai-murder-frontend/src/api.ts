@@ -11,7 +11,7 @@ export type ChatStreamRequest = {
 }
 
 export type StructuredMessageRole = 'SYSTEM' | 'PLAYER' | 'CHARACTER' | 'NARRATOR'
-export type StructuredMessageKind = 'OPENING' | 'DIALOGUE' | 'CLUE'
+export type StructuredMessageKind = 'OPENING' | 'DIALOGUE' | 'CLUE' | 'SCENE'
 
 export type ChatStreamStructuredMessage = {
   messageId: string
@@ -38,6 +38,9 @@ export type ChatStreamProgressResponse = {
   currentStageOrder: number
   totalStages: number
   objective: string
+  atmosphere?: string
+  storyBeat?: string
+  playerTurnCount?: number
   revealedClues: ClueProgressItem[]
 }
 
@@ -50,7 +53,7 @@ export type ChatStreamEventResponse = {
   progress: ChatStreamProgressResponse | null
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 type StreamChatHandlers = {
   onEvent: (eventName: string, payload: Result<ChatStreamEventResponse>) => void
@@ -79,28 +82,41 @@ export async function streamChat(payload: ChatStreamRequest, handlers: StreamCha
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
   let reading = true
+  let receivedServerError = false
 
-  while (reading) {
-    const { value, done } = await reader.read()
-    if (done) {
-      reading = false
-      continue
-    }
-
-    buffer += decoder.decode(value, { stream: true })
-    const blocks = buffer.split('\n\n')
-    buffer = blocks.pop() ?? ''
-
-    for (const block of blocks) {
-      const eventName = extractEventName(block)
-      const dataText = extractEventData(block)
-      if (!dataText) {
+  try {
+    while (reading) {
+      const { value, done } = await reader.read()
+      if (done) {
+        reading = false
         continue
       }
 
-      const parsed = JSON.parse(dataText) as Result<ChatStreamEventResponse>
-      handlers.onEvent(eventName, parsed)
+      buffer += decoder.decode(value, { stream: true })
+      const blocks = buffer.split('\n\n')
+      buffer = blocks.pop() ?? ''
+
+      for (const block of blocks) {
+        const eventName = extractEventName(block)
+        const dataText = extractEventData(block)
+        if (!dataText) {
+          continue
+        }
+
+        const parsed = JSON.parse(dataText) as Result<ChatStreamEventResponse>
+        if (eventName === 'error' || parsed.code === 'STREAM_ERROR') {
+          receivedServerError = true
+        }
+        handlers.onEvent(eventName, parsed)
+      }
     }
+  } catch (error) {
+    if (receivedServerError) {
+      return
+    }
+    throw error instanceof Error ? error : new Error('连接现场失败')
+  } finally {
+    reader.releaseLock()
   }
 }
 

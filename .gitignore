@@ -23,6 +23,7 @@ vite-*.log
 **/.mvn/
 
 # Spring Boot local config
+ai-murder-backend/src/main/resources/application.yml
 **/application-local.yml
 **/application-local.yaml
 **/application-local.properties

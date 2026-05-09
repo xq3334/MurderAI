@@ -18,5 +18,10 @@ public enum StructuredMessageKind {
     /**
      * 线索投放。
      */
-    CLUE
+    CLUE,
+
+    /**
+     * 环境旁白或转场镜头。
+     */
+    SCENE
 }

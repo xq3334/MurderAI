@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * 游戏会话。
- * 表示玩家实际开启的一局游戏的运行时状态。
+ * 表示玩家实际开启的一局游戏在运行时的完整状态。
  */
 public class GameSession {
 
@@ -57,6 +57,36 @@ public class GameSession {
      * 待投放的线索标识列表。
      */
     private List<String> pendingClueIds = new ArrayList<>();
+
+    /**
+     * 待投放的环境旁白列表。
+     */
+    private List<SceneCue> pendingSceneCues = new ArrayList<>();
+
+    /**
+     * 玩家已发起的回合数。
+     */
+    private int playerTurnCount;
+
+    /**
+     * 当前阶段内已推进的回合数。
+     */
+    private int stageTurnCount;
+
+    /**
+     * 当前环境摘要。
+     */
+    private String currentEnvironmentSummary;
+
+    /**
+     * 当前剧情节拍摘要。
+     */
+    private String currentStoryBeat;
+
+    /**
+     * 当前这一轮是否刚发生阶段推进。
+     */
+    private boolean stageJustChanged;
 
     /**
      * 当前会话状态。
@@ -143,6 +173,54 @@ public class GameSession {
 
     public void setPendingClueIds(List<String> pendingClueIds) {
         this.pendingClueIds = pendingClueIds;
+    }
+
+    public List<SceneCue> getPendingSceneCues() {
+        return pendingSceneCues;
+    }
+
+    public void setPendingSceneCues(List<SceneCue> pendingSceneCues) {
+        this.pendingSceneCues = pendingSceneCues;
+    }
+
+    public int getPlayerTurnCount() {
+        return playerTurnCount;
+    }
+
+    public void setPlayerTurnCount(int playerTurnCount) {
+        this.playerTurnCount = playerTurnCount;
+    }
+
+    public int getStageTurnCount() {
+        return stageTurnCount;
+    }
+
+    public void setStageTurnCount(int stageTurnCount) {
+        this.stageTurnCount = stageTurnCount;
+    }
+
+    public String getCurrentEnvironmentSummary() {
+        return currentEnvironmentSummary;
+    }
+
+    public void setCurrentEnvironmentSummary(String currentEnvironmentSummary) {
+        this.currentEnvironmentSummary = currentEnvironmentSummary;
+    }
+
+    public String getCurrentStoryBeat() {
+        return currentStoryBeat;
+    }
+
+    public void setCurrentStoryBeat(String currentStoryBeat) {
+        this.currentStoryBeat = currentStoryBeat;
+    }
+
+    public boolean isStageJustChanged() {
+        return stageJustChanged;
+    }
+
+    public void setStageJustChanged(boolean stageJustChanged) {
+        this.stageJustChanged = stageJustChanged;
     }
 
     public GameSessionStatus getStatus() {

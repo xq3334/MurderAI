@@ -6,7 +6,7 @@ type ChatMessage = {
   speaker: string
   speakerKey: string
   role: 'system' | 'player' | 'character' | 'narrator' | 'pending'
-  kind: 'opening' | 'dialogue' | 'clue'
+  kind: 'opening' | 'dialogue' | 'clue' | 'scene'
   tone?: string
   content: string
 }

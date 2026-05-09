@@ -1,5 +1,7 @@
 package com.codexlab.aimurder.web.service;
 
+import com.codexlab.aimurder.domain.session.enums.SceneCueType;
+import com.codexlab.aimurder.domain.session.model.SceneCue;
 import com.codexlab.aimurder.web.dto.ChatStreamEventResponse;
 import com.codexlab.aimurder.web.dto.ChatStreamProgressResponse;
 import com.codexlab.aimurder.web.dto.ChatStreamStructuredMessage;
@@ -89,6 +91,8 @@ public class ChatService {
 
             String fullPrompt = chatOrchestratorService.buildPrompt(sessionId, message);
             gameSessionService.appendMessage(sessionId, "user", message);
+            List<SceneCue> pendingSceneCues = gameSessionService.consumePendingSceneCues(sessionId);
+            pendingSceneCues.forEach(sceneCue -> sendSceneEvent(emitter, sessionId, sceneCue));
             StringBuilder fullReply = new StringBuilder();
             StructuredMessageStreamParser.ParserState parserState = structuredMessageStreamParser.newState(
                     gameSessionService.isOpeningDelivered(sessionId) ? StructuredMessageKind.DIALOGUE : StructuredMessageKind.OPENING
@@ -129,10 +133,13 @@ public class ChatService {
             emitter.complete();
         } catch (Exception exception) {
             try {
-                sendEvent(emitter, "error", Result.failure("STREAM_ERROR", exception.getMessage()));
+                String errorMessage = exception.getMessage() == null || exception.getMessage().isBlank()
+                        ? "模型连接中断，请稍后重试"
+                        : exception.getMessage();
+                sendEvent(emitter, "error", Result.failure("STREAM_ERROR", errorMessage));
             } catch (IOException ignored) {
             }
-            emitter.completeWithError(exception);
+            emitter.complete();
         }
     }
 
@@ -208,6 +215,44 @@ public class ChatService {
                 true
         );
         sendStructuredMessageEvent(emitter, sessionId, structuredMessage);
+    }
+
+    /**
+     * 发送环境旁白事件。
+     *
+     * @param emitter      当前可用的 SSE 发射器
+     * @param sessionId    当前会话标识
+     * @param sceneMessage 环境旁白文本
+     */
+    private void sendSceneEvent(SseEmitter emitter, String sessionId, SceneCue sceneCue) {
+        ChatStreamStructuredMessage structuredMessage = new ChatStreamStructuredMessage(
+                "scene-" + UUID.randomUUID().toString().substring(0, 8),
+                "旁白",
+                "narrator",
+                StructuredMessageRole.NARRATOR,
+                StructuredMessageKind.SCENE,
+                resolveSceneTone(sceneCue.type(), sceneCue.title()),
+                sceneCue.content(),
+                true
+        );
+        sendStructuredMessageEvent(emitter, sessionId, structuredMessage);
+    }
+
+    /**
+     * 将场景事件类型映射为前端可识别的语气标签。
+     *
+     * @param type  场景事件类型
+     * @param title 场景事件标题
+     * @return 语气标签
+     */
+    private String resolveSceneTone(SceneCueType type, String title) {
+        return switch (type) {
+            case ENTRY -> "入局镜头";
+            case PRESSURE -> "压迫推进";
+            case TRANSITION -> "阶段转场";
+            case REACTION -> "现场反应";
+            case FORESHADOW -> title == null || title.isBlank() ? "伏笔提示" : title;
+        };
     }
 
     /**
