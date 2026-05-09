@@ -1,0 +1,45 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+frontend-*.log
+vite-*.log
+
+# Environment
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Java / Maven
+**/target/
+**/.mvn/
+
+# Spring Boot local config
+**/application-local.yml
+**/application-local.yaml
+**/application-local.properties
+**/application-dev.yml
+**/application-dev.yaml
+**/application-dev.properties
+**/application-secret.yml
+**/application-secret.yaml
+**/application-secret.properties
+
+# Node
+**/node_modules/
+**/dist/
+**/.vite/
+**/*.tsbuildinfo
+
+# Runtime / temp
+*.pid
+*.tmp
+*.temp

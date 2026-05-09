@@ -1,0 +1,19 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-murder-backend
+  ai:
+    dashscope:
+      api-key: sk-a45470a576404f02958fd2a26a121e12
+      chat:
+        options:
+          model: qwen-plus
+          temperature: 0.8
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
