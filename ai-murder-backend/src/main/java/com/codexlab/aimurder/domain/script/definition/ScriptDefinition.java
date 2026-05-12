@@ -30,19 +30,23 @@ public class ScriptDefinition {
     private String openingNarration;
 
     /**
-     * 玩家在本副本中的身份名称。
+     * 当前副本的玩法模式名称。
      */
-    private String playerRoleName;
+    private String playerModeName;
+
+    private int unlockOrder = 1;
+
+    private boolean randomRoleOnStart;
 
     /**
-     * 玩家身份说明。
+     * 当前副本的玩法模式说明。
      */
-    private String playerRoleDescription;
+    private String playerModeDescription;
 
     /**
-     * 玩家本局目标。
+     * 控场角色标识。
      */
-    private String playerObjective;
+    private String hostCharacterId;
 
     /**
      * 开场引导要求。
@@ -73,6 +77,21 @@ public class ScriptDefinition {
      * 最终真相描述。
      */
     private String truthSummary;
+
+    /**
+     * 结局揭晓标题。
+     */
+    private String endingTitle;
+
+    /**
+     * 结局真相长文。
+     */
+    private String endingStory;
+
+    /**
+     * 完成最终指认前至少需要公开的关键线索数量。
+     */
+    private int minimumKeyCluesForAccusation = 2;
 
     public String getScriptId() {
         return scriptId;
@@ -106,28 +125,44 @@ public class ScriptDefinition {
         this.openingNarration = openingNarration;
     }
 
-    public String getPlayerRoleName() {
-        return playerRoleName;
+    public String getPlayerModeName() {
+        return playerModeName;
     }
 
-    public void setPlayerRoleName(String playerRoleName) {
-        this.playerRoleName = playerRoleName;
+    public void setPlayerModeName(String playerModeName) {
+        this.playerModeName = playerModeName;
     }
 
-    public String getPlayerRoleDescription() {
-        return playerRoleDescription;
+    public int getUnlockOrder() {
+        return unlockOrder;
     }
 
-    public void setPlayerRoleDescription(String playerRoleDescription) {
-        this.playerRoleDescription = playerRoleDescription;
+    public void setUnlockOrder(int unlockOrder) {
+        this.unlockOrder = unlockOrder;
     }
 
-    public String getPlayerObjective() {
-        return playerObjective;
+    public boolean isRandomRoleOnStart() {
+        return randomRoleOnStart;
     }
 
-    public void setPlayerObjective(String playerObjective) {
-        this.playerObjective = playerObjective;
+    public void setRandomRoleOnStart(boolean randomRoleOnStart) {
+        this.randomRoleOnStart = randomRoleOnStart;
+    }
+
+    public String getPlayerModeDescription() {
+        return playerModeDescription;
+    }
+
+    public void setPlayerModeDescription(String playerModeDescription) {
+        this.playerModeDescription = playerModeDescription;
+    }
+
+    public String getHostCharacterId() {
+        return hostCharacterId;
+    }
+
+    public void setHostCharacterId(String hostCharacterId) {
+        this.hostCharacterId = hostCharacterId;
     }
 
     public String getOpeningInstruction() {
@@ -176,5 +211,29 @@ public class ScriptDefinition {
 
     public void setTruthSummary(String truthSummary) {
         this.truthSummary = truthSummary;
+    }
+
+    public String getEndingTitle() {
+        return endingTitle;
+    }
+
+    public void setEndingTitle(String endingTitle) {
+        this.endingTitle = endingTitle;
+    }
+
+    public String getEndingStory() {
+        return endingStory;
+    }
+
+    public void setEndingStory(String endingStory) {
+        this.endingStory = endingStory;
+    }
+
+    public int getMinimumKeyCluesForAccusation() {
+        return minimumKeyCluesForAccusation;
+    }
+
+    public void setMinimumKeyCluesForAccusation(int minimumKeyCluesForAccusation) {
+        this.minimumKeyCluesForAccusation = minimumKeyCluesForAccusation;
     }
 }

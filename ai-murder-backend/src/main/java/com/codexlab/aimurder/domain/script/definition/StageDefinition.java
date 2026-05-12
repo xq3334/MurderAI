@@ -45,6 +45,16 @@ public class StageDefinition {
     private List<String> focusCharacterIds = new ArrayList<>();
 
     /**
+     * 推进到下一阶段时可命中的关键词。
+     */
+    private List<String> advanceKeywords = new ArrayList<>();
+
+    /**
+     * 当前阶段至少需要推进的玩家轮次。
+     */
+    private int minimumTurnsBeforeAdvance = 1;
+
+    /**
      * 进入下一阶段的条件描述。
      */
     private String nextStageCondition;
@@ -103,6 +113,22 @@ public class StageDefinition {
 
     public void setFocusCharacterIds(List<String> focusCharacterIds) {
         this.focusCharacterIds = focusCharacterIds;
+    }
+
+    public List<String> getAdvanceKeywords() {
+        return advanceKeywords;
+    }
+
+    public void setAdvanceKeywords(List<String> advanceKeywords) {
+        this.advanceKeywords = advanceKeywords;
+    }
+
+    public int getMinimumTurnsBeforeAdvance() {
+        return minimumTurnsBeforeAdvance;
+    }
+
+    public void setMinimumTurnsBeforeAdvance(int minimumTurnsBeforeAdvance) {
+        this.minimumTurnsBeforeAdvance = minimumTurnsBeforeAdvance;
     }
 
     public String getNextStageCondition() {

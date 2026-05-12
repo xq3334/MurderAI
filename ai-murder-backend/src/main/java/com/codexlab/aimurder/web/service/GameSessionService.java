@@ -23,10 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * 游戏会话服务。
- * 负责维护某一局游戏的运行时状态。
- */
 @Service
 public class GameSessionService {
 
@@ -37,67 +33,50 @@ public class GameSessionService {
         this.scriptRepository = scriptRepository;
     }
 
-    /**
-     * 获取会话，不存在则按默认副本创建。
-     *
-     * @param sessionId 会话标识
-     * @return 游戏会话
-     */
     public GameSession getOrCreate(String sessionId) {
-        return sessionStore.computeIfAbsent(sessionId, key -> createSession(key, scriptRepository.getDefaultScript()));
+        return sessionStore.computeIfAbsent(sessionId, key -> {
+            ScriptDefinition scriptDefinition = scriptRepository.getDefaultScript();
+            CharacterDefinition playerCharacter = getDefaultPlayerCharacter(scriptDefinition);
+            return createSession(key, scriptDefinition, playerCharacter);
+        });
     }
 
-    /**
-     * 追加一条消息到会话历史。
-     *
-     * @param sessionId 会话标识
-     * @param role      消息角色
-     * @param content   消息内容
-     */
+    public GameSession initializeSession(String sessionId, String scriptId, String playerCharacterId) {
+        ScriptDefinition scriptDefinition = requireScript(scriptId);
+        CharacterDefinition playerCharacter = requirePlayerCharacter(scriptDefinition, playerCharacterId);
+        GameSession session = createSession(sessionId, scriptDefinition, playerCharacter);
+        sessionStore.put(sessionId, session);
+        return session;
+    }
+
+    public GameSession getExisting(String sessionId) {
+        GameSession session = sessionStore.get(sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("会话不存在: " + sessionId);
+        }
+        return session;
+    }
+
     public void appendMessage(String sessionId, String role, String content) {
         GameSession session = getOrCreate(sessionId);
         session.getMessageHistory().add(new ChatContextMessage(role, content));
         session.setUpdatedAt(LocalDateTime.now());
     }
 
-    /**
-     * 获取历史消息副本。
-     *
-     * @param sessionId 会话标识
-     * @return 历史消息列表
-     */
     public List<ChatContextMessage> getMessageHistory(String sessionId) {
         return new ArrayList<>(getOrCreate(sessionId).getMessageHistory());
     }
 
-    /**
-     * 判断当前会话是否已经完成开场。
-     *
-     * @param sessionId 会话标识
-     * @return 是否已开场
-     */
     public boolean isOpeningDelivered(String sessionId) {
         return getOrCreate(sessionId).isOpeningDelivered();
     }
 
-    /**
-     * 标记当前会话已经完成正式开场。
-     *
-     * @param sessionId 会话标识
-     */
     public void markOpeningDelivered(String sessionId) {
         GameSession session = getOrCreate(sessionId);
         session.setOpeningDelivered(true);
         session.setUpdatedAt(LocalDateTime.now());
     }
 
-    /**
-     * 刷新会话运行状态。
-     *
-     * @param session   游戏会话
-     * @param message   玩家输入
-     * @param speakerId 当前被点名的角色标识
-     */
     public void refreshSessionState(GameSession session, String message, String speakerId) {
         int beforeStageOrder = session.getCurrentStage() == null ? 0 : session.getCurrentStage().getStageOrder();
         session.setPlayerTurnCount(session.getPlayerTurnCount() + 1);
@@ -119,19 +98,13 @@ public class GameSessionService {
         session.setUpdatedAt(LocalDateTime.now());
     }
 
-    /**
-     * 获取并清空本轮待投放线索。
-     *
-     * @param sessionId 会话标识
-     * @return 待投放线索列表
-     */
     public List<ClueDefinition> consumePendingClues(String sessionId) {
         GameSession session = getOrCreate(sessionId);
         if (session.getPendingClueIds().isEmpty()) {
             return List.of();
         }
 
-        ScriptDefinition scriptDefinition = scriptRepository.findById(session.getScriptId());
+        ScriptDefinition scriptDefinition = requireScript(session.getScriptId());
         List<ClueDefinition> clues = scriptDefinition.getClues().stream()
                 .filter(clue -> session.getPendingClueIds().contains(clue.getClueId()))
                 .toList();
@@ -140,12 +113,6 @@ public class GameSessionService {
         return clues;
     }
 
-    /**
-     * 获取并清空本轮待投放的环境旁白。
-     *
-     * @param sessionId 会话标识
-     * @return 待投放环境旁白列表
-     */
     public List<SceneCue> consumePendingSceneCues(String sessionId) {
         GameSession session = getOrCreate(sessionId);
         if (session.getPendingSceneCues().isEmpty()) {
@@ -158,15 +125,9 @@ public class GameSessionService {
         return sceneCues;
     }
 
-    /**
-     * 构建当前会话的进度快照。
-     *
-     * @param sessionId 会话标识
-     * @return 进度快照
-     */
     public ChatStreamProgressResponse buildProgress(String sessionId) {
         GameSession session = getOrCreate(sessionId);
-        ScriptDefinition scriptDefinition = scriptRepository.findById(session.getScriptId());
+        ScriptDefinition scriptDefinition = requireScript(session.getScriptId());
         StageDefinition stageDefinition = getCurrentStageDefinition(session);
         List<ClueProgressItem> revealedClues = scriptDefinition.getClues().stream()
                 .filter(clue -> session.getClueStates().stream()
@@ -179,29 +140,27 @@ public class GameSessionService {
                 ))
                 .toList();
 
+        String playerDisplay = session.getPlayerCharacterName() == null
+                ? scriptDefinition.getPlayerModeName()
+                : session.getPlayerCharacterName() + " / " + session.getPlayerIdentity();
+
         return new ChatStreamProgressResponse(
                 scriptDefinition.getScriptName(),
-                scriptDefinition.getPlayerRoleName(),
+                playerDisplay,
                 stageDefinition == null ? "" : stageDefinition.getStageName(),
                 stageDefinition == null ? 0 : stageDefinition.getStageOrder(),
                 scriptDefinition.getStages().size(),
                 stageDefinition == null ? "" : stageDefinition.getObjective(),
-                session.getCurrentEnvironmentSummary(),
-                session.getCurrentStoryBeat(),
+                defaultText(session.getCurrentEnvironmentSummary(), scriptDefinition.getOpeningNarration()),
+                defaultText(session.getCurrentStoryBeat(), "局面仍在试探期。"),
                 session.getPlayerTurnCount(),
                 revealedClues
         );
     }
 
-    /**
-     * 获取当前阶段可公开的线索列表。
-     *
-     * @param session 游戏会话
-     * @return 当前可公开线索
-     */
     public List<ClueDefinition> getAvailableClues(GameSession session) {
-        ScriptDefinition scriptDefinition = scriptRepository.findById(session.getScriptId());
-        if (scriptDefinition == null || session.getCurrentStage() == null) {
+        ScriptDefinition scriptDefinition = requireScript(session.getScriptId());
+        if (session.getCurrentStage() == null) {
             return List.of();
         }
 
@@ -216,37 +175,17 @@ public class GameSessionService {
                 .toList();
     }
 
-    /**
-     * 获取当前说话角色定义。
-     *
-     * @param session   游戏会话
-     * @param speakerId 角色标识
-     * @return 角色定义
-     */
     public CharacterDefinition getSpeaker(GameSession session, String speakerId) {
-        ScriptDefinition scriptDefinition = scriptRepository.findById(session.getScriptId());
-        if (scriptDefinition == null) {
-            return null;
-        }
-
+        ScriptDefinition scriptDefinition = requireScript(session.getScriptId());
         return scriptDefinition.getCharacters().stream()
                 .filter(character -> character.getCharacterId().equals(speakerId))
                 .findFirst()
-                .orElseGet(() -> scriptDefinition.getCharacters().stream()
-                        .filter(character -> "butler".equals(character.getCharacterId()))
-                        .findFirst()
-                        .orElse(null));
+                .orElseGet(() -> getHostCharacter(scriptDefinition));
     }
 
-    /**
-     * 获取当前阶段定义。
-     *
-     * @param session 游戏会话
-     * @return 当前阶段定义
-     */
     public StageDefinition getCurrentStageDefinition(GameSession session) {
-        ScriptDefinition scriptDefinition = scriptRepository.findById(session.getScriptId());
-        if (scriptDefinition == null || session.getCurrentStage() == null) {
+        ScriptDefinition scriptDefinition = requireScript(session.getScriptId());
+        if (session.getCurrentStage() == null) {
             return null;
         }
 
@@ -256,55 +195,50 @@ public class GameSessionService {
                 .orElse(null);
     }
 
-    /**
-     * 当前是否还处于入局演出期。
-     *
-     * @param session 游戏会话
-     * @return 是否处于入局演出期
-     */
+    public CharacterDefinition getPlayerCharacter(GameSession session) {
+        ScriptDefinition scriptDefinition = requireScript(session.getScriptId());
+        return scriptDefinition.getCharacters().stream()
+                .filter(character -> character.getCharacterId().equals(session.getPlayerCharacterId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    public CharacterDefinition getHostCharacter(GameSession session) {
+        return getHostCharacter(requireScript(session.getScriptId()));
+    }
+
     public boolean isInPrologue(GameSession session) {
         return session.getPlayerTurnCount() <= 1;
     }
 
-    /**
-     * 当前是否刚发生阶段切换。
-     *
-     * @param session 游戏会话
-     * @return 是否刚切阶段
-     */
     public boolean isStageJustChanged(GameSession session) {
         return session.isStageJustChanged();
     }
 
-    /**
-     * 获取当前环境摘要。
-     *
-     * @param session 游戏会话
-     * @return 环境摘要
-     */
     public String getEnvironmentSummary(GameSession session) {
         return session.getCurrentEnvironmentSummary();
     }
 
-    /**
-     * 获取当前剧情节拍摘要。
-     *
-     * @param session 游戏会话
-     * @return 剧情节拍摘要
-     */
     public String getStoryBeat(GameSession session) {
         return session.getCurrentStoryBeat();
     }
 
-    private GameSession createSession(String sessionId, ScriptDefinition scriptDefinition) {
+    private GameSession createSession(String sessionId, ScriptDefinition scriptDefinition, CharacterDefinition playerCharacter) {
         GameSession session = new GameSession();
         session.setSessionId(sessionId);
         session.setScriptId(scriptDefinition.getScriptId());
+        session.setHostCharacterId(scriptDefinition.getHostCharacterId());
+        session.setPlayerCharacterId(playerCharacter.getCharacterId());
+        session.setPlayerCharacterName(playerCharacter.getCharacterName());
+        session.setPlayerIdentity(playerCharacter.getIdentity());
+        session.setPlayerRoleDescription(buildPlayerRoleDescription(playerCharacter));
+        session.setPlayerObjective(defaultText(playerCharacter.getPrivateObjective(), playerCharacter.getPublicObjective()));
+        session.setOpeningDelivered(true);
         session.setStatus(GameSessionStatus.IN_PROGRESS);
         session.setCreatedAt(LocalDateTime.now());
         session.setUpdatedAt(LocalDateTime.now());
         session.setCurrentStage(buildInitialStage(scriptDefinition));
-        session.setCharacterStates(buildCharacterStates(scriptDefinition));
+        session.setCharacterStates(buildCharacterStates(scriptDefinition, playerCharacter.getCharacterId()));
         session.setClueStates(buildClueStates(scriptDefinition));
         session.setPendingClueIds(new ArrayList<>());
         session.setPendingSceneCues(new ArrayList<>());
@@ -312,8 +246,8 @@ public class GameSessionService {
         session.setStageTurnCount(0);
         session.setStageJustChanged(false);
         session.setCurrentEnvironmentSummary(scriptDefinition.getOpeningNarration());
-        session.setCurrentStoryBeat("众人刚被困在封闭现场，真正的互相试探尚未开始。");
-        queueSceneCue(session, SceneCueType.ENTRY, "入局", "雨声裹着山庄外墙一路往下坠，昏黄的应急灯把每个人的影子都拉得比平时更长。");
+        session.setCurrentStoryBeat("所有人刚刚入座，真正的破绽还藏在呼吸和停顿里。");
+        queueSceneCue(session, SceneCueType.ENTRY, "入局", scriptDefinition.getOpeningNarration());
         return session;
     }
 
@@ -330,9 +264,10 @@ public class GameSessionService {
         return state;
     }
 
-    private List<CharacterSessionState> buildCharacterStates(ScriptDefinition scriptDefinition) {
+    private List<CharacterSessionState> buildCharacterStates(ScriptDefinition scriptDefinition, String playerCharacterId) {
         return scriptDefinition.getCharacters().stream()
-                .filter(character -> !"butler".equals(character.getCharacterId()))
+                .filter(character -> !character.getCharacterId().equals(scriptDefinition.getHostCharacterId()))
+                .filter(character -> !character.getCharacterId().equals(playerCharacterId))
                 .map(character -> {
                     CharacterSessionState state = new CharacterSessionState();
                     state.setCharacterId(character.getCharacterId());
@@ -356,14 +291,14 @@ public class GameSessionService {
     }
 
     private void updateCharacterState(GameSession session, String message, String speakerId) {
-        String normalizedMessage = message == null ? "" : message;
+        String normalizedMessage = defaultText(message, "");
         session.getCharacterStates().forEach(state -> {
-            if (state.getCharacterId().equals(speakerId) && !"butler".equals(speakerId)) {
+            if (state.getCharacterId().equals(speakerId)) {
                 state.setPressureLevel(state.getPressureLevel() + 1);
             }
 
             if (state.getCharacterId().equals(speakerId)
-                    && containsAny(normalizedMessage, "怀疑", "是不是你", "凶手", "你杀")) {
+                    && containsAny(normalizedMessage, "怀疑", "是不是你", "凶手", "你杀", "帮凶")) {
                 state.setSuspected(true);
             }
 
@@ -374,37 +309,33 @@ public class GameSessionService {
     }
 
     private void updateStageState(GameSession session, String message) {
-        String normalizedMessage = message == null ? "" : message;
         SessionStageState currentStage = session.getCurrentStage();
         if (currentStage == null) {
             return;
         }
 
-        boolean atmosphereReady = session.getPlayerTurnCount() >= 2;
-        boolean pressureReady = session.getCharacterStates().stream()
-                .anyMatch(state -> state.getPressureLevel() >= 2);
+        ScriptDefinition scriptDefinition = requireScript(session.getScriptId());
+        int currentOrder = currentStage.getStageOrder();
+        StageDefinition stageDefinition = scriptDefinition.getStages().stream()
+                .filter(stage -> stage.getStageOrder() == currentOrder)
+                .findFirst()
+                .orElse(null);
 
-        if (currentStage.getStageOrder() == 1
-                && atmosphereReady
-                && (containsAny(normalizedMessage, "停电", "配电箱", "人为", "谁动了电")
-                || pressureReady)) {
-            session.setCurrentStage(buildStageState(session.getScriptId(), 2));
+        if (stageDefinition == null || currentOrder >= scriptDefinition.getStages().size()) {
             return;
         }
 
-        long loosenedCount = session.getCharacterStates().stream()
-                .filter(CharacterSessionState::isLoosened)
-                .count();
-        boolean enoughPressure = loosenedCount >= 1 || session.getPlayerTurnCount() >= 4;
-        if (currentStage.getStageOrder() == 2
-                && enoughPressure
-                && containsAny(normalizedMessage, "账本", "残页", "字迹", "便签", "遗嘱", "乔")) {
-            session.setCurrentStage(buildStageState(session.getScriptId(), 3));
+        boolean reachedMinTurns = session.getStageTurnCount() >= stageDefinition.getMinimumTurnsBeforeAdvance();
+        boolean keywordTriggered = containsAny(defaultText(message, ""), stageDefinition.getAdvanceKeywords().toArray(String[]::new));
+        boolean pressureTriggered = session.getCharacterStates().stream().anyMatch(state -> state.getPressureLevel() >= 2);
+
+        if (reachedMinTurns && (keywordTriggered || pressureTriggered)) {
+            session.setCurrentStage(buildStageState(session.getScriptId(), currentOrder + 1));
         }
     }
 
     private SessionStageState buildStageState(String scriptId, int stageOrder) {
-        ScriptDefinition scriptDefinition = scriptRepository.findById(scriptId);
+        ScriptDefinition scriptDefinition = requireScript(scriptId);
         StageDefinition stageDefinition = scriptDefinition.getStages().stream()
                 .filter(stage -> stage.getStageOrder() == stageOrder)
                 .findFirst()
@@ -419,9 +350,9 @@ public class GameSessionService {
     }
 
     private void revealCluesForCurrentStage(GameSession session) {
-        ScriptDefinition scriptDefinition = scriptRepository.findById(session.getScriptId());
+        ScriptDefinition scriptDefinition = requireScript(session.getScriptId());
         StageDefinition currentStage = getCurrentStageDefinition(session);
-        if (scriptDefinition == null || currentStage == null) {
+        if (currentStage == null) {
             return;
         }
 
@@ -446,49 +377,43 @@ public class GameSessionService {
         }
 
         int turnCount = session.getPlayerTurnCount();
-        String normalizedMessage = message == null ? "" : message;
+        String normalizedMessage = defaultText(message, "");
 
         if (session.isStageJustChanged()) {
             session.setCurrentEnvironmentSummary(stage.getOpeningNarration());
-            session.setCurrentStoryBeat("现场刚进入“" + stage.getStageName() + "”，众人的表情和口风都开始发生变化。");
+            session.setCurrentStoryBeat("局面刚切入“" + stage.getStageName() + "”，桌面下的判断和站位都在重排。");
             queueSceneCue(session, SceneCueType.TRANSITION, "转场", stage.getOpeningNarration());
             return;
         }
 
         if (turnCount == 1) {
-            session.setCurrentEnvironmentSummary("雨声压在窗外，烛火和应急灯把每个人的脸都切出忽明忽暗的边。");
-            session.setCurrentStoryBeat("这还不是正式盘问，更像是所有人被迫坐回现场、彼此观察第一眼的时候。");
-            queueSceneCue(session, SceneCueType.ENTRY, "试探", "第一轮发问还没真正刺进去，桌边的人却已经开始用沉默互相衡量。");
+            session.setCurrentEnvironmentSummary("开场秩序还勉强维持着，但每个人都已经开始重新估量彼此的危险程度。");
+            session.setCurrentStoryBeat("第一轮发问更像站位与试探，而不是立刻撕开真相。");
+            queueSceneCue(session, SceneCueType.ENTRY, "试探", "第一句追问落下去之后，桌边所有人的停顿都比话语更有分量。");
             return;
         }
 
         if (stage.getStageOrder() == 1) {
-            if (containsAny(normalizedMessage, "谁", "是不是", "为什么")) {
-                session.setCurrentEnvironmentSummary("走廊尽头偶尔传来木板轻响，像有人稍微挪动了一下重心。");
-                session.setCurrentStoryBeat("试探已经开始，表面平静的口供里第一次露出了互相防备的味道。");
-                queueSceneCue(session, SceneCueType.PRESSURE, "压迫", "有人先开了口，空气反而更绷紧了，像再多追问一句就会把某根线扯断。");
-            } else {
-                session.setCurrentEnvironmentSummary("雨势没有减弱，山庄里却比刚停电时更安静，像所有人都在等别人先犯错。");
-                session.setCurrentStoryBeat("众人仍在建立口供表面的一致性，但真正的紧张已经在桌面下蔓延。");
+            session.setCurrentEnvironmentSummary("表面的一致口供还没有崩，但真正的紧张已经从语气和余光里慢慢渗出来。");
+            session.setCurrentStoryBeat("众人正在从“先把局面稳住”过渡到“开始辨认谁在回避”。");
+            if (containsAny(normalizedMessage, "谁", "为什么", "最后", "当时")) {
+                queueSceneCue(session, SceneCueType.PRESSURE, "压迫", "有人把问题问深了一寸，原本还能糊过去的沉默立刻变得危险。");
             }
             return;
         }
 
         if (stage.getStageOrder() == 2) {
-            if (containsAny(normalizedMessage, "停电", "配电箱", "线路")) {
-                session.setCurrentEnvironmentSummary("有人不自觉看向走廊外侧，像是那只配电箱忽然比尸体还更让人心虚。");
-                session.setCurrentStoryBeat("调查重点已经从“谁有动机”转向“谁安排了黑暗”，局势开始收紧。");
-                queueSceneCue(session, SceneCueType.REACTION, "反应", "提到停电时，几个人的反应几乎不是恐惧，而更像条件反射般的回避。");
-            } else {
-                session.setCurrentEnvironmentSummary("空气里开始出现焦躁的停顿，像每一句解释都需要先掂量后果。");
-                session.setCurrentStoryBeat("表面的互相质疑正在变成更具体的追责，真正的破口快出现了。");
+            session.setCurrentEnvironmentSummary("调查重点已经从动机转向手法，几个人的回答开始出现刻意选择的痕迹。");
+            session.setCurrentStoryBeat("真相不再藏在抽象怀疑里，而是在时间线和细节里逼近。");
+            if (containsAny(normalizedMessage, "停电", "信", "账本", "配电箱", "旧案", "码头")) {
+                queueSceneCue(session, SceneCueType.REACTION, "反应", "提到关键物证和旧事时，有人的反应不像惊讶，更像条件反射般地想绕开。");
             }
             return;
         }
 
-        session.setCurrentEnvironmentSummary("桌面上的证据越来越难被轻轻带过，连最克制的人也开始出现呼吸和语速的失衡。");
-        session.setCurrentStoryBeat("现场已逼近指认时刻，剩下的不再是闲谈，而是谁会先扛不住最后一轮追问。");
-        queueSceneCue(session, SceneCueType.FORESHADOW, "逼近", "线索已经压到桌面中央，谁先再开口，谁就可能把自己彻底暴露出来。");
+        session.setCurrentEnvironmentSummary("桌上的证据已经足够把气氛压到发紧，所有辩解都像是在给最后一击争时间。");
+        session.setCurrentStoryBeat("现场已经逼近指认时刻，剩下的不是闲谈，而是谁会先露出撑不住的那一下。");
+        queueSceneCue(session, SceneCueType.FORESHADOW, "逼近", "局面已经走到不能后退的位置，再多一句追问，就可能把某个人彻底推到灯下。");
     }
 
     private void queueSceneCue(GameSession session, SceneCueType type, String title, String content) {
@@ -506,9 +431,61 @@ public class GameSessionService {
         pendingCues.add(new SceneCue(type, title, content));
     }
 
+    private CharacterDefinition requirePlayerCharacter(ScriptDefinition scriptDefinition, String playerCharacterId) {
+        return scriptDefinition.getCharacters().stream()
+                .filter(CharacterDefinition::isSelectableByPlayer)
+                .filter(character -> character.getCharacterId().equals(playerCharacterId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("玩家角色不存在或不可扮演: " + playerCharacterId));
+    }
+
+    private CharacterDefinition getDefaultPlayerCharacter(ScriptDefinition scriptDefinition) {
+        return scriptDefinition.getCharacters().stream()
+                .filter(CharacterDefinition::isSelectableByPlayer)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("剧本未配置可扮演角色: " + scriptDefinition.getScriptId()));
+    }
+
+    private CharacterDefinition getHostCharacter(ScriptDefinition scriptDefinition) {
+        return scriptDefinition.getCharacters().stream()
+                .filter(character -> character.getCharacterId().equals(scriptDefinition.getHostCharacterId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("剧本未配置控场角色: " + scriptDefinition.getScriptId()));
+    }
+
+    private ScriptDefinition requireScript(String scriptId) {
+        ScriptDefinition scriptDefinition = scriptRepository.findById(scriptId);
+        if (scriptDefinition == null) {
+            throw new IllegalArgumentException("剧本不存在: " + scriptId);
+        }
+        return scriptDefinition;
+    }
+
+    private String buildPlayerRoleDescription(CharacterDefinition playerCharacter) {
+        List<String> sections = new ArrayList<>();
+        sections.add("身份：" + defaultText(playerCharacter.getIdentity(), "未知"));
+        sections.add("关系：" + defaultText(playerCharacter.getRelationship(), "暂无"));
+        sections.add("表面人设：" + defaultText(playerCharacter.getPublicPersona(), "暂无"));
+        sections.add("公开背景：" + defaultText(playerCharacter.getPublicBackstory(), "暂无"));
+        if (playerCharacter.getPrivateBackstory() != null && !playerCharacter.getPrivateBackstory().isBlank()) {
+            sections.add("隐秘背景：" + playerCharacter.getPrivateBackstory());
+        }
+        if (playerCharacter.getOpeningTip() != null && !playerCharacter.getOpeningTip().isBlank()) {
+            sections.add("开局提醒：" + playerCharacter.getOpeningTip());
+        }
+        return String.join("\n", sections);
+    }
+
+    private String defaultText(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
     private boolean containsAny(String source, String... fragments) {
+        if (source == null || source.isBlank() || fragments == null) {
+            return false;
+        }
         for (String fragment : fragments) {
-            if (source.contains(fragment)) {
+            if (fragment != null && !fragment.isBlank() && source.contains(fragment)) {
                 return true;
             }
         }

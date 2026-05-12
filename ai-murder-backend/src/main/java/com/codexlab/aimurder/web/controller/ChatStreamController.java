@@ -1,6 +1,9 @@
 package com.codexlab.aimurder.web.controller;
 
+import com.codexlab.aimurder.web.dto.ChatHintRequest;
+import com.codexlab.aimurder.web.dto.ChatHintResponse;
 import com.codexlab.aimurder.web.dto.ChatStreamRequest;
+import com.codexlab.aimurder.web.dto.Result;
 import com.codexlab.aimurder.web.service.ChatService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -29,5 +32,10 @@ public class ChatStreamController {
     @PostMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@Valid @RequestBody ChatStreamRequest request) {
         return chatService.streamChat(request.sessionId(), request.message());
+    }
+
+    @PostMapping("/hints")
+    public Result<ChatHintResponse> hints(@Valid @RequestBody ChatHintRequest request) {
+        return Result.success(chatService.generateHints(request.sessionId()));
     }
 }

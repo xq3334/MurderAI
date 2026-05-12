@@ -53,10 +53,116 @@ export type ChatStreamEventResponse = {
   progress: ChatStreamProgressResponse | null
 }
 
+export type ScriptSummaryResponse = {
+  scriptId: string
+  scriptName: string
+  summary: string
+  openingNarration: string
+  playerModeName: string
+  selectableRoleCount: number
+  unlockOrder: number
+  randomRoleOnStart: boolean
+}
+
+export type SessionBootstrapResponse = {
+  sessionId: string
+  scriptId: string
+  scriptName: string
+  playerCharacterId: string
+  playerCharacterName: string
+  playerIdentity: string
+  playerRoleDescription: string
+  playerObjective: string
+  openingNarration: string
+}
+
+export type SessionCharacterSeatResponse = {
+  characterId: string
+  characterName: string
+  identity: string
+  mood: string
+  status: string
+}
+
+export type SessionDetailResponse = {
+  sessionId: string
+  scriptId: string
+  scriptName: string
+  playerCharacterId: string
+  playerCharacterName: string
+  playerIdentity: string
+  playerRoleDescription: string
+  playerObjective: string
+  openingDelivered: boolean
+  characterSeats: SessionCharacterSeatResponse[]
+  progress: ChatStreamProgressResponse
+}
+
+export type FinalAccusationRequest = {
+  sessionId: string
+  accusedCharacterId: string
+  reasoning?: string
+}
+
+export type EndingRevealResponse = {
+  sessionId: string
+  scriptId: string
+  scriptName: string
+  endingTitle: string
+  success: boolean
+  accusationAllowed: boolean
+  verdict: string
+  playerOutcome: string
+  accusedCharacterName: string
+  killerCharacterName: string
+  reasoningSummary: string
+  truthStory: string
+  keyEvidence: string[]
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 type StreamChatHandlers = {
   onEvent: (eventName: string, payload: Result<ChatStreamEventResponse>) => void
+}
+
+async function requestJson<T>(path: string, init?: RequestInit) {
+  const response = await fetch(`${API_BASE_URL}${path}`, init)
+  const payload = (await response.json().catch(() => null)) as Result<T> | null
+
+  if (!response.ok || !payload?.success || !payload.data) {
+    throw new Error(payload?.message ?? '请求失败')
+  }
+
+  return payload.data
+}
+
+export async function listScripts() {
+  return requestJson<ScriptSummaryResponse[]>('/api/scripts')
+}
+
+export async function initializeRandomScriptSession(payload: { sessionId?: string; scriptId: string }) {
+  return requestJson<SessionBootstrapResponse>('/api/scripts/random-select', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function fetchSessionDetail(sessionId: string) {
+  return requestJson<SessionDetailResponse>(`/api/scripts/sessions/${sessionId}`)
+}
+
+export async function submitFinalAccusation(payload: FinalAccusationRequest) {
+  return requestJson<EndingRevealResponse>('/api/ending/accuse', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function streamChat(payload: ChatStreamRequest, handlers: StreamChatHandlers) {

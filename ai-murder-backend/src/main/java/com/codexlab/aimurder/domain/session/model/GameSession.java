@@ -24,6 +24,36 @@ public class GameSession {
     private String scriptId;
 
     /**
+     * 玩家当前扮演的角色标识。
+     */
+    private String playerCharacterId;
+
+    /**
+     * 玩家当前扮演的角色名称。
+     */
+    private String playerCharacterName;
+
+    /**
+     * 玩家当前扮演角色的身份。
+     */
+    private String playerIdentity;
+
+    /**
+     * 玩家角色卡中的公开与私密背景摘要。
+     */
+    private String playerRoleDescription;
+
+    /**
+     * 玩家当前角色的私密目标。
+     */
+    private String playerObjective;
+
+    /**
+     * 控场角色标识。
+     */
+    private String hostCharacterId;
+
+    /**
      * 当前阶段状态。
      */
     private SessionStageState currentStage;
@@ -59,7 +89,7 @@ public class GameSession {
     private List<String> pendingClueIds = new ArrayList<>();
 
     /**
-     * 待投放的环境旁白列表。
+     * 待投放的场景旁白列表。
      */
     private List<SceneCue> pendingSceneCues = new ArrayList<>();
 
@@ -117,6 +147,54 @@ public class GameSession {
 
     public void setScriptId(String scriptId) {
         this.scriptId = scriptId;
+    }
+
+    public String getPlayerCharacterId() {
+        return playerCharacterId;
+    }
+
+    public void setPlayerCharacterId(String playerCharacterId) {
+        this.playerCharacterId = playerCharacterId;
+    }
+
+    public String getPlayerCharacterName() {
+        return playerCharacterName;
+    }
+
+    public void setPlayerCharacterName(String playerCharacterName) {
+        this.playerCharacterName = playerCharacterName;
+    }
+
+    public String getPlayerIdentity() {
+        return playerIdentity;
+    }
+
+    public void setPlayerIdentity(String playerIdentity) {
+        this.playerIdentity = playerIdentity;
+    }
+
+    public String getPlayerRoleDescription() {
+        return playerRoleDescription;
+    }
+
+    public void setPlayerRoleDescription(String playerRoleDescription) {
+        this.playerRoleDescription = playerRoleDescription;
+    }
+
+    public String getPlayerObjective() {
+        return playerObjective;
+    }
+
+    public void setPlayerObjective(String playerObjective) {
+        this.playerObjective = playerObjective;
+    }
+
+    public String getHostCharacterId() {
+        return hostCharacterId;
+    }
+
+    public void setHostCharacterId(String hostCharacterId) {
+        this.hostCharacterId = hostCharacterId;
     }
 
     public SessionStageState getCurrentStage() {

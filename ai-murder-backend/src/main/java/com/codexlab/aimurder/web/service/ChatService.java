@@ -1,8 +1,11 @@
 package com.codexlab.aimurder.web.service;
 
 import com.codexlab.aimurder.domain.session.enums.SceneCueType;
+import com.codexlab.aimurder.domain.session.model.GameSession;
 import com.codexlab.aimurder.domain.session.model.SceneCue;
+import com.codexlab.aimurder.web.dto.ChatContextMessage;
 import com.codexlab.aimurder.web.dto.ChatStreamEventResponse;
+import com.codexlab.aimurder.web.dto.ChatHintResponse;
 import com.codexlab.aimurder.web.dto.ChatStreamProgressResponse;
 import com.codexlab.aimurder.web.dto.ChatStreamStructuredMessage;
 import com.codexlab.aimurder.web.dto.Result;
@@ -14,6 +17,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -69,6 +73,23 @@ public class ChatService {
         SseEmitter emitter = new SseEmitter(0L);
         sseExecutorService.execute(() -> doStream(emitter, resolvedSessionId, message));
         return emitter;
+    }
+
+    public ChatHintResponse generateHints(String sessionId) {
+        GameSession session = gameSessionService.getExisting(sessionId);
+        ChatStreamProgressResponse progress = gameSessionService.buildProgress(sessionId);
+        List<ChatContextMessage> history = gameSessionService.getMessageHistory(sessionId);
+        String prompt = buildHintPrompt(session, progress, history);
+        String rawReply = chatClient.prompt()
+                .user(prompt)
+                .call()
+                .content();
+
+        List<String> hints = normalizeHints(rawReply);
+        if (hints.isEmpty()) {
+            hints = fallbackHints(progress);
+        }
+        return new ChatHintResponse(sessionId, hints);
     }
 
     /**
@@ -267,5 +288,87 @@ public class ChatService {
         emitter.send(SseEmitter.event()
                 .name(name)
                 .data(payload));
+    }
+
+    private String buildHintPrompt(
+            GameSession session,
+            ChatStreamProgressResponse progress,
+            List<ChatContextMessage> history
+    ) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("你是剧本杀助手，不要剧透真相，不要直接点凶手。")
+                .append("你要根据当前局面，给玩家3条下一步可直接发送的追问建议。")
+                .append("每条都要像玩家自己会发出去的话，长度控制在20到45字。")
+                .append("建议必须具体、能推进剧情、避免重复。")
+                .append("输出格式严格为三行，每行一句，不要编号，不要解释。")
+                .append("\n\n当前副本：").append(progress.scriptName())
+                .append("\n玩家身份：").append(session.getPlayerCharacterName()).append(" / ").append(session.getPlayerIdentity())
+                .append("\n当前阶段：").append(progress.currentStageName())
+                .append("\n当前目标：").append(progress.objective())
+                .append("\n当前氛围：").append(progress.atmosphere())
+                .append("\n当前剧情拍点：").append(progress.storyBeat());
+
+        if (!progress.revealedClues().isEmpty()) {
+            builder.append("\n已公开线索：");
+            progress.revealedClues().forEach(item -> builder
+                    .append("\n- ")
+                    .append(item.clueName())
+                    .append("：")
+                    .append(item.content()));
+        }
+
+        if (!history.isEmpty()) {
+            builder.append("\n最近对话：");
+            history.stream()
+                    .skip(Math.max(0, history.size() - 6))
+                    .forEach(message -> builder
+                            .append("\n")
+                            .append("user".equalsIgnoreCase(message.role()) ? "玩家" : "现场")
+                            .append("：")
+                            .append(message.content()));
+        }
+        return builder.toString();
+    }
+
+    private List<String> normalizeHints(String rawReply) {
+        if (rawReply == null || rawReply.isBlank()) {
+            return List.of();
+        }
+
+        List<String> hints = new ArrayList<>();
+        for (String line : rawReply.split("\\R")) {
+            String normalized = line
+                    .replaceFirst("^[\\-•*\\d.、\\s]+", "")
+                    .trim();
+            if (!normalized.isBlank()) {
+                hints.add(normalized);
+            }
+            if (hints.size() == 3) {
+                break;
+            }
+        }
+        return hints;
+    }
+
+    private List<String> fallbackHints(ChatStreamProgressResponse progress) {
+        if (progress.currentStageOrder() >= progress.totalStages()) {
+            return List.of(
+                    "把现在最关键的三条证据串起来，它们共同指向谁？",
+                    "让最可疑的人再补一句，现在谁的说法最经不起追问？",
+                    "如果我要最终指认，我还缺哪一块决定性拼图？"
+            );
+        }
+        if (progress.currentStageOrder() >= 2) {
+            return List.of(
+                    "把现在最可疑的两个人拎出来，他们各自最想绕开什么细节？",
+                    "按时间顺序复盘案发前后，第一处对不上的地方在哪？",
+                    "如果继续逼问，现在线索最可能从谁身上松口？"
+            );
+        }
+        return List.of(
+                "先完整介绍这个副本、我的身份和第一轮最该盯住什么。",
+                "让在场角色分别说一句，自己在案发前后各自在哪里、在做什么。",
+                "先帮我梳理案发前后最关键的时间线，指出第一处明显矛盾。"
+        );
     }
 }
