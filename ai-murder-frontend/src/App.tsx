@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import { type ChatStreamProgressResponse, type ChatStreamStructuredMessage, streamChat } from './api'
+import {
+  type ChatStreamProgressResponse,
+  type ChatStreamStructuredMessage,
+  type EndingRevealResponse,
+  type SessionCharacterSeatResponse,
+  fetchSessionDetail,
+  streamChat,
+  submitFinalAccusation,
+} from './api'
 import { GameExperience } from './GameExperience'
 import './App.css'
 
@@ -209,6 +217,11 @@ function App() {
   const [progress, setProgress] = useState<ChatStreamProgressResponse | null>(null)
   const [sessionId, setSessionId] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [sessionSeats, setSessionSeats] = useState<SessionCharacterSeatResponse[]>([])
+  const [accusedCharacterId, setAccusedCharacterId] = useState('')
+  const [reasoning, setReasoning] = useState('')
+  const [isAccusing, setIsAccusing] = useState(false)
+  const [ending, setEnding] = useState<EndingRevealResponse | null>(null)
   const [activeHotspotId, setActiveHotspotId] = useState(previewHotspots[0].id)
   const [previewPointer, setPreviewPointer] = useState({
     tiltX: '-3deg',
@@ -232,6 +245,33 @@ function App() {
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
 
+  useEffect(() => {
+    if (!sessionId) {
+      return
+    }
+
+    let cancelled = false
+
+    async function loadSessionDetail() {
+      try {
+        const detail = await fetchSessionDetail(sessionId)
+        if (!cancelled) {
+          setSessionSeats(detail.characterSeats)
+        }
+      } catch {
+        if (!cancelled) {
+          setSessionSeats([])
+        }
+      }
+    }
+
+    void loadSessionDetail()
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
+
   const openGame = (event?: MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
     event?.preventDefault()
     window.location.hash = 'play'
@@ -240,6 +280,28 @@ function App() {
   const backToLanding = () => {
     window.location.hash = ''
   }
+
+  const displaySeats = useMemo(() => {
+    if (sessionSeats.length) {
+      return sessionSeats.map((seat) => ({
+        name: seat.characterName,
+        role: seat.identity,
+        mood: seat.mood,
+        status: seat.status,
+      }))
+    }
+    return characterSeats
+  }, [sessionSeats])
+
+  const canAccuse = Boolean(progress && progress.currentStageOrder >= progress.totalStages)
+
+  const accusationOptions = useMemo(() => {
+    return sessionSeats.map((seat) => ({
+      value: seat.characterId,
+      label: seat.characterName,
+      description: seat.identity,
+    }))
+  }, [sessionSeats])
 
   const upsertStructuredMessage = (incoming: ChatStreamStructuredMessage) => {
     setMessages((current) => {
@@ -293,6 +355,7 @@ function App() {
     setIsStreaming(true)
 
     try {
+      setEnding(null)
       await streamChat(
         {
           sessionId: sessionId || undefined,
@@ -349,6 +412,38 @@ function App() {
     }
   }
 
+  const handleAccuse = async () => {
+    if (!sessionId || !accusedCharacterId || isAccusing) {
+      return
+    }
+
+    setIsAccusing(true)
+    try {
+      const reveal = await submitFinalAccusation({
+        sessionId,
+        accusedCharacterId,
+        reasoning: reasoning.trim() || undefined,
+      })
+      setEnding(reveal)
+    } catch (error) {
+      const failureMessage = error instanceof Error ? error.message : '最终指认提交失败'
+      setMessages((current) => [
+        ...current,
+        {
+          id: `accuse-error-${Date.now()}`,
+          speaker: '系统',
+          speakerKey: 'system',
+          role: 'system',
+          kind: 'dialogue',
+          tone: '错误',
+          content: failureMessage,
+        },
+      ])
+    } finally {
+      setIsAccusing(false)
+    }
+  }
+
   const handlePreviewMove = (event: MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     const x = (event.clientX - rect.left) / rect.width
@@ -384,8 +479,17 @@ function App() {
         onSend={handleSend}
         onBack={backToLanding}
         onPrompt={setDraft}
-        characterSeats={characterSeats}
+        characterSeats={displaySeats}
         quickPrompts={quickPrompts}
+        canAccuse={canAccuse}
+        accusationOptions={accusationOptions}
+        accusedCharacterId={accusedCharacterId}
+        onAccusedCharacterChange={setAccusedCharacterId}
+        reasoning={reasoning}
+        onReasoningChange={setReasoning}
+        onAccuse={handleAccuse}
+        isAccusing={isAccusing}
+        ending={ending}
       />
     )
   }

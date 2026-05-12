@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
-import type { ChatStreamProgressResponse } from './api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ChatStreamProgressResponse, EndingRevealResponse } from './api'
 
 type ChatMessage = {
   id: string
@@ -27,6 +27,19 @@ type GameExperienceProps = {
     status: string
   }>
   quickPrompts: string[]
+  canAccuse: boolean
+  accusationOptions: Array<{
+    value: string
+    label: string
+    description: string
+  }>
+  accusedCharacterId: string
+  onAccusedCharacterChange: (value: string) => void
+  reasoning: string
+  onReasoningChange: (value: string) => void
+  onAccuse: () => void
+  isAccusing: boolean
+  ending: EndingRevealResponse | null
 }
 
 const roleMeta: Record<ChatMessage['role'], { badge: string }> = {
@@ -48,8 +61,18 @@ export function GameExperience({
   onPrompt,
   characterSeats,
   quickPrompts,
+  canAccuse,
+  accusationOptions,
+  accusedCharacterId,
+  onAccusedCharacterChange,
+  reasoning,
+  onReasoningChange,
+  onAccuse,
+  isAccusing,
+  ending,
 }: GameExperienceProps) {
   const transcriptRef = useRef<HTMLDivElement | null>(null)
+  const [isAccusationOpen, setIsAccusationOpen] = useState(false)
 
   const stageProgressLabel = useMemo(() => {
     if (!progress) {
@@ -68,6 +91,18 @@ export function GameExperience({
       behavior: 'smooth',
     })
   }, [messages])
+
+  useEffect(() => {
+    if (!canAccuse) {
+      setIsAccusationOpen(false)
+    }
+  }, [canAccuse])
+
+  useEffect(() => {
+    if (ending) {
+      setIsAccusationOpen(false)
+    }
+  }, [ending])
 
   return (
     <div className="game-shell">
@@ -229,9 +264,114 @@ export function GameExperience({
                 </button>
               </div>
             </div>
+
+            <div className="ending-panel">
+              <p className="ending-panel__hint">
+                {canAccuse
+                  ? '你已经进入最终阶段。现在可以提交一次正式指认，系统会直接进入结案。'
+                  : '最终指认会在最后阶段解锁。平时的怀疑和试探只会影响调查，不会直接结案。'}
+              </p>
+              <div className="ending-panel__status">
+                {canAccuse ? '最终指认已解锁。请选择目标并确认。' : '尚未到最终指认阶段。继续追问，推进局势与关键线索。'}
+              </div>
+              <button
+                type="button"
+                className="ending-panel__submit"
+                onClick={() => setIsAccusationOpen((current) => !current)}
+                disabled={!canAccuse || !accusationOptions.length || isAccusing}
+              >
+                {isAccusationOpen ? '收起最终指认' : '打开最终指认'}
+              </button>
+
+              {isAccusationOpen ? (
+                <>
+                  <div className="suspect-grid">
+                    {accusationOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`suspect-chip ${accusedCharacterId === option.value ? 'suspect-chip--active' : ''}`}
+                        onClick={() => onAccusedCharacterChange(option.value)}
+                        disabled={isAccusing}
+                      >
+                        <strong>{option.label}</strong>
+                        <span>{option.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    className="ending-panel__textarea"
+                    value={reasoning}
+                    onChange={(event) => onReasoningChange(event.target.value)}
+                    placeholder="可选填写一句推理理由，作为你的最终结案陈述。"
+                    disabled={isAccusing}
+                  />
+                  <button
+                    type="button"
+                    className="ending-panel__submit"
+                    onClick={onAccuse}
+                    disabled={!accusedCharacterId || isAccusing}
+                  >
+                    {isAccusing ? '正在提交指认...' : '确认最终指认'}
+                  </button>
+                </>
+              ) : null}
+            </div>
           </div>
         </section>
       </main>
+
+      <div className={`ending-reveal ${ending ? 'ending-reveal--open' : ''}`}>
+        {ending ? (
+          <>
+            <div className="ending-reveal__backdrop" />
+            <div className="ending-reveal__shell">
+              <div className="ending-reveal__orbit ending-reveal__orbit--a" />
+              <div className="ending-reveal__orbit ending-reveal__orbit--b" />
+              <div className="ending-reveal__orbit ending-reveal__orbit--c" />
+              <div className="ending-reveal__card">
+                <div className="ending-reveal__face ending-reveal__face--front">
+                  <span>Case Closed</span>
+                  <strong>{ending.endingTitle}</strong>
+                  <p>{ending.verdict}</p>
+                </div>
+                <div className="ending-reveal__face ending-reveal__face--back">
+                  <span>Truth Reveal</span>
+                  <strong>{ending.success ? '指认成立' : '指认落空'}</strong>
+                  <p className="ending-reveal__verdict">{ending.playerOutcome}</p>
+                  <div className="ending-reveal__meta">
+                    <div>
+                      <span>你指认的人</span>
+                      <strong>{ending.accusedCharacterName}</strong>
+                    </div>
+                    <div>
+                      <span>真正的凶手</span>
+                      <strong>{ending.killerCharacterName}</strong>
+                    </div>
+                  </div>
+                  <div className="ending-reveal__truth">
+                    <p>{ending.truthStory}</p>
+                  </div>
+                  <div className="ending-reveal__evidence">
+                    <span>Key Evidence</span>
+                    <ul>
+                      {ending.keyEvidence.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="ending-reveal__footer">
+                    <p>{ending.reasoningSummary}</p>
+                    <button type="button" className="ending-reveal__button" onClick={onBack}>
+                      返回宣传页
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
     </div>
   )
 }
