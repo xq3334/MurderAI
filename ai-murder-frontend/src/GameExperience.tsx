@@ -19,14 +19,12 @@ type GameExperienceProps = {
   onDraftChange: (value: string) => void
   onSend: () => void
   onBack: () => void
-  onPrompt: (value: string) => void
   characterSeats: Array<{
     name: string
     role: string
     mood: string
     status: string
   }>
-  quickPrompts: string[]
   canAccuse: boolean
   accusationOptions: Array<{
     value: string
@@ -40,6 +38,22 @@ type GameExperienceProps = {
   onAccuse: () => void
   isAccusing: boolean
   ending: EndingRevealResponse | null
+  hints: string[]
+  quickActions: string[]
+  isHintsOpen: boolean
+  isHintsLoading: boolean
+  hintError: string
+  onToggleHints: () => void
+  onUseHint: (hint: string) => void
+  onUseQuickAction: (action: string) => void
+}
+
+type HintTheme = {
+  key: 'storm' | 'romance' | 'manor' | 'neutral'
+  eyebrow: string
+  title: string
+  accent: string
+  frame: string
 }
 
 const roleMeta: Record<ChatMessage['role'], { badge: string }> = {
@@ -50,6 +64,67 @@ const roleMeta: Record<ChatMessage['role'], { badge: string }> = {
   pending: { badge: '整理中' },
 }
 
+function resolveHintTheme(progress: ChatStreamProgressResponse | null): HintTheme {
+  const scriptName = progress?.scriptName ?? ''
+  const stageName = progress?.currentStageName ?? ''
+  const objective = progress?.objective ?? ''
+  const source = `${scriptName} ${stageName} ${objective}`.toLowerCase()
+
+  if (
+    scriptName.includes('蝉鸣') ||
+    stageName.includes('晚自习') ||
+    objective.includes('关系') ||
+    source.includes('romance')
+  ) {
+    return {
+      key: 'romance',
+      eyebrow: 'Pulse Trace',
+      title: '暧昧流向',
+      accent: '从情绪、回避和立场试探入手。',
+      frame: '让提示像被折起的秘密便签。',
+    }
+  }
+
+  if (
+    scriptName.includes('山庄') ||
+    scriptName.includes('庄园') ||
+    objective.includes('宅邸') ||
+    source.includes('manor') ||
+    source.includes('mansion')
+  ) {
+    return {
+      key: 'manor',
+      eyebrow: 'House Echo',
+      title: '宅邸回声',
+      accent: '从空间、目击和时间裂缝切入。',
+      frame: '像从旧宅档案柜里抽出的调查卡。',
+    }
+  }
+
+  if (
+    scriptName.includes('雨夜') ||
+    stageName.includes('停电') ||
+    objective.includes('暴雨') ||
+    source.includes('storm')
+  ) {
+    return {
+      key: 'storm',
+      eyebrow: 'Storm Signal',
+      title: '风暴想法',
+      accent: '沿着停电前后、气氛异动和遮掩点推进。',
+      frame: '像雨夜舞台上被灯光照亮的一组线索卡。',
+    }
+  }
+
+  return {
+    key: 'neutral',
+    eyebrow: 'Scene Thread',
+    title: '推进想法',
+    accent: '优先抓住当前对话里最松动的地方。',
+    frame: '保持中性侦查感，适配后续更多副本风格。',
+  }
+}
+
 export function GameExperience({
   messages,
   progress,
@@ -58,9 +133,7 @@ export function GameExperience({
   onDraftChange,
   onSend,
   onBack,
-  onPrompt,
   characterSeats,
-  quickPrompts,
   canAccuse,
   accusationOptions,
   accusedCharacterId,
@@ -70,8 +143,17 @@ export function GameExperience({
   onAccuse,
   isAccusing,
   ending,
+  hints,
+  quickActions,
+  isHintsOpen,
+  isHintsLoading,
+  hintError,
+  onToggleHints,
+  onUseHint,
+  onUseQuickAction,
 }: GameExperienceProps) {
   const transcriptRef = useRef<HTMLDivElement | null>(null)
+  const shouldAutoScrollRef = useRef(true)
   const [isAccusationOpen, setIsAccusationOpen] = useState(false)
 
   const stageProgressLabel = useMemo(() => {
@@ -81,11 +163,14 @@ export function GameExperience({
     return `${progress.currentStageOrder}/${progress.totalStages} · ${progress.currentStageName}`
   }, [progress])
 
+  const hintTheme = useMemo(() => resolveHintTheme(progress), [progress])
+
   useEffect(() => {
     const container = transcriptRef.current
-    if (!container) {
+    if (!container || !shouldAutoScrollRef.current) {
       return
     }
+
     container.scrollTo({
       top: container.scrollHeight,
       behavior: 'smooth',
@@ -104,6 +189,11 @@ export function GameExperience({
     }
   }, [ending])
 
+  const handleComposerSend = () => {
+    shouldAutoScrollRef.current = true
+    onSend()
+  }
+
   return (
     <div className="game-shell">
       <div className="game-shell__curtain game-shell__curtain--left" />
@@ -113,7 +203,7 @@ export function GameExperience({
       <div className="game-shell__veil game-shell__veil--right" />
       <header className="game-topbar">
         <button type="button" className="game-topbar__back" onClick={onBack}>
-          返回宣传页
+          返回首页
         </button>
         <div className="game-topbar__title">
           <span>Night Session</span>
@@ -130,7 +220,7 @@ export function GameExperience({
           <section className="game-panel game-panel--intro">
             <span className="game-panel__eyebrow">Case Brief</span>
             <h2>{progress?.currentStageName ?? '雨夜断灯'}</h2>
-            <p>{progress?.objective ?? '你是今晚被临时留下的中立调查者。先稳定现场，然后推动第一轮口供比对。'}</p>
+            <p>{progress?.objective ?? '你是今夜被临时留下的中立调查者。先稳住现场，再推动第一轮口供比对。'}</p>
           </section>
 
           <section className="game-panel game-panel--progress">
@@ -199,13 +289,26 @@ export function GameExperience({
               <h1>对话主舞台</h1>
             </div>
             <div className="game-stage__chips">
-              <span>开场说明</span>
-              <span>角色实时气泡</span>
-              <span>线索卡投放</span>
+              <button
+                type="button"
+                className={`game-stage__hint-toggle ${isHintsOpen ? 'game-stage__hint-toggle--active' : ''}`}
+                onClick={onToggleHints}
+                disabled={isHintsLoading}
+              >
+                {isHintsLoading ? '提示生成中...' : '想法提示'}
+              </button>
             </div>
           </div>
 
-          <div ref={transcriptRef} className="game-transcript">
+          <div
+            ref={transcriptRef}
+            className="game-transcript"
+            onScroll={(event) => {
+              const container = event.currentTarget
+              const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+              shouldAutoScrollRef.current = distanceToBottom < 48
+            }}
+          >
             {messages.map((message) => (
               <article
                 key={message.id}
@@ -228,30 +331,35 @@ export function GameExperience({
           </div>
 
           <div className="game-composer">
-            <div className="game-composer__prompts">
-              {quickPrompts.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  className="game-prompt"
-                  onClick={() => onPrompt(prompt)}
-                  disabled={isStreaming}
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
             <div className="game-composer__box">
+              {quickActions.length ? (
+                <div className="game-quick-actions">
+                  <span className="game-quick-actions__eyebrow">Scene Actions</span>
+                  <div className="game-quick-actions__list">
+                    {quickActions.map((action) => (
+                      <button
+                        key={action}
+                        type="button"
+                        className="game-quick-actions__chip"
+                        onClick={() => onUseQuickAction(action)}
+                        disabled={isStreaming}
+                      >
+                        {action}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <textarea
                 value={draft}
                 onChange={(event) => onDraftChange(event.target.value)}
-                placeholder="输入你的发问。你可以点名角色，也可以直接追问停电、遗嘱、账本或行踪。"
-                rows={4}
+                placeholder="输入你的发问。你可以点名角色，也可以直接追问停电、遗嘱、账本或行迹。"
+                rows={3}
                 disabled={isStreaming}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
-                    onSend()
+                    handleComposerSend()
                   }
                 }}
               />
@@ -259,66 +367,68 @@ export function GameExperience({
                 <span>
                   {isStreaming ? '现场正在持续落下新发言与线索。' : '阶段目标和已公开线索会固定显示在左侧，不必来回翻记录。'}
                 </span>
-                <button type="button" className="game-send" onClick={onSend} disabled={isStreaming}>
+                <button type="button" className="game-send" onClick={handleComposerSend} disabled={isStreaming}>
                   {isStreaming ? '调查进行中...' : '发起追问'}
                 </button>
               </div>
             </div>
-
-            <div className="ending-panel">
-              <p className="ending-panel__hint">
-                {canAccuse
-                  ? '你已经进入最终阶段。现在可以提交一次正式指认，系统会直接进入结案。'
-                  : '最终指认会在最后阶段解锁。平时的怀疑和试探只会影响调查，不会直接结案。'}
-              </p>
-              <div className="ending-panel__status">
-                {canAccuse ? '最终指认已解锁。请选择目标并确认。' : '尚未到最终指认阶段。继续追问，推进局势与关键线索。'}
-              </div>
-              <button
-                type="button"
-                className="ending-panel__submit"
-                onClick={() => setIsAccusationOpen((current) => !current)}
-                disabled={!canAccuse || !accusationOptions.length || isAccusing}
-              >
-                {isAccusationOpen ? '收起最终指认' : '打开最终指认'}
-              </button>
-
-              {isAccusationOpen ? (
-                <>
-                  <div className="suspect-grid">
-                    {accusationOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={`suspect-chip ${accusedCharacterId === option.value ? 'suspect-chip--active' : ''}`}
-                        onClick={() => onAccusedCharacterChange(option.value)}
-                        disabled={isAccusing}
-                      >
-                        <strong>{option.label}</strong>
-                        <span>{option.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <textarea
-                    className="ending-panel__textarea"
-                    value={reasoning}
-                    onChange={(event) => onReasoningChange(event.target.value)}
-                    placeholder="可选填写一句推理理由，作为你的最终结案陈述。"
-                    disabled={isAccusing}
-                  />
-                  <button
-                    type="button"
-                    className="ending-panel__submit"
-                    onClick={onAccuse}
-                    disabled={!accusedCharacterId || isAccusing}
-                  >
-                    {isAccusing ? '正在提交指认...' : '确认最终指认'}
-                  </button>
-                </>
-              ) : null}
-            </div>
           </div>
         </section>
+
+        <aside className="game-rail">
+          <div className="ending-panel">
+            <p className="ending-panel__hint">
+              {canAccuse
+                ? '你已经进入最终阶段。现在可以提交一次正式指认，系统会直接进入结案。'
+                : '最终指认会在最后阶段解锁。平时的怀疑和试探只会影响调查，不会直接结案。'}
+            </p>
+            <div className="ending-panel__status">
+              {canAccuse ? '最终指认已解锁。请选择目标并确认。' : '尚未到最终指认阶段。继续追问，推进局势与关键线索。'}
+            </div>
+            <button
+              type="button"
+              className="ending-panel__submit"
+              onClick={() => setIsAccusationOpen((current) => !current)}
+              disabled={!canAccuse || !accusationOptions.length || isAccusing}
+            >
+              {isAccusationOpen ? '收起最终指认' : '打开最终指认'}
+            </button>
+
+            {isAccusationOpen ? (
+              <>
+                <div className="suspect-grid">
+                  {accusationOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`suspect-chip ${accusedCharacterId === option.value ? 'suspect-chip--active' : ''}`}
+                      onClick={() => onAccusedCharacterChange(option.value)}
+                      disabled={isAccusing}
+                    >
+                      <strong>{option.label}</strong>
+                      <span>{option.description}</span>
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  className="ending-panel__textarea"
+                  value={reasoning}
+                  onChange={(event) => onReasoningChange(event.target.value)}
+                  placeholder="可选填写一句推理理由，作为你的最终结案陈述。"
+                  disabled={isAccusing}
+                />
+                <button
+                  type="button"
+                  className="ending-panel__submit"
+                  onClick={onAccuse}
+                  disabled={!accusedCharacterId || isAccusing}
+                >
+                  {isAccusing ? '正在提交指认...' : '确认最终指认'}
+                </button>
+              </>
+            ) : null}
+          </div>
+        </aside>
       </main>
 
       <div className={`ending-reveal ${ending ? 'ending-reveal--open' : ''}`}>
@@ -363,7 +473,7 @@ export function GameExperience({
                   <div className="ending-reveal__footer">
                     <p>{ending.reasoningSummary}</p>
                     <button type="button" className="ending-reveal__button" onClick={onBack}>
-                      返回宣传页
+                      返回首页
                     </button>
                   </div>
                 </div>
@@ -372,6 +482,49 @@ export function GameExperience({
           </>
         ) : null}
       </div>
+
+      {isHintsOpen ? (
+        <div className="hint-overlay" role="dialog" aria-modal="true" aria-label="想法提示">
+          <button type="button" className="hint-overlay__backdrop" onClick={onToggleHints} aria-label="关闭想法提示" />
+          <div className={`hint-overlay__panel hint-overlay__panel--${hintTheme.key}`}>
+            <div className="hint-overlay__header">
+              <div>
+                <span className="hint-overlay__eyebrow">{hintTheme.eyebrow}</span>
+                <h2>{hintTheme.title}</h2>
+              </div>
+              <div className="hint-overlay__actions">
+                <p>{hintTheme.accent}</p>
+                <button type="button" className="hint-overlay__back" onClick={onToggleHints}>
+                  返回
+                </button>
+              </div>
+            </div>
+
+            {hintError ? <div className="hint-overlay__error">{hintError}</div> : null}
+
+            {hints.length ? (
+              <div className="hint-card-grid">
+                {hints.map((hint, index) => (
+                  <button
+                    key={hint}
+                    type="button"
+                    className={`hint-card hint-card--${hintTheme.key}`}
+                    style={{ ['--hint-delay' as string]: `${index * 70}ms` }}
+                    onClick={() => onUseHint(hint)}
+                  >
+                    <span className="hint-card__index">{`0${index + 1}`}</span>
+                    <strong>{hintTheme.frame}</strong>
+                    <p>{hint}</p>
+                    <span className="hint-card__cta">填入输入框</span>
+                  </button>
+                ))}
+              </div>
+            ) : !hintError && !isHintsLoading ? (
+              <div className="hint-overlay__empty">还没有可用提示，继续推进对话后再试。</div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -22,6 +22,7 @@ export type ChatStreamStructuredMessage = {
   tone: string
   delta: string
   completed: boolean
+  quickActions?: string[]
 }
 
 export type ClueProgressItem = {
@@ -120,6 +121,11 @@ export type EndingRevealResponse = {
   keyEvidence: string[]
 }
 
+export type ChatHintResponse = {
+  sessionId: string
+  hints: string[]
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 type StreamChatHandlers = {
@@ -157,6 +163,16 @@ export async function fetchSessionDetail(sessionId: string) {
 
 export async function submitFinalAccusation(payload: FinalAccusationRequest) {
   return requestJson<EndingRevealResponse>('/api/ending/accuse', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function fetchChatHints(payload: { sessionId: string }) {
+  return requestJson<ChatHintResponse>('/api/chat/hints', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

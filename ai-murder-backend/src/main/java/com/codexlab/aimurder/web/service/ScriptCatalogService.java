@@ -103,7 +103,11 @@ public class ScriptCatalogService {
                 .filter(CharacterDefinition::isSelectableByPlayer)
                 .toList();
         if (selectableCharacters.isEmpty()) {
-            throw new IllegalArgumentException("副本下没有可抽取的玩家角色: " + scriptId);
+            throw new IllegalArgumentException("??????????????: " + scriptId);
+        }
+
+        if (!scriptDefinition.isRandomRoleOnStart()) {
+            return initializeSession(sessionId, scriptId, selectableCharacters.get(0).getCharacterId());
         }
 
         CharacterDefinition selectedCharacter = selectableCharacters.get(

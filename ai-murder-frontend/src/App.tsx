@@ -1,17 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import {
+  fetchChatHints,
+  fetchSessionDetail,
+  initializeRandomScriptSession,
+  listScripts,
+  streamChat,
+  submitFinalAccusation,
+  type ChatHintResponse,
   type ChatStreamProgressResponse,
   type ChatStreamStructuredMessage,
   type EndingRevealResponse,
+  type ScriptSummaryResponse,
   type SessionCharacterSeatResponse,
-  fetchSessionDetail,
-  streamChat,
-  submitFinalAccusation,
 } from './api'
 import { GameExperience } from './GameExperience'
 import './App.css'
 
-type AppView = 'landing' | 'game'
+type AppView = 'landing' | 'setup' | 'game'
 
 type CharacterSeat = {
   name: string
@@ -47,17 +52,21 @@ type Hotspot = {
   description: string
 }
 
+type ScriptDisplayMeta = {
+  label: string
+  value: string
+}
+
+type ScriptFeature = {
+  title: string
+  description: string
+}
+
 const characterSeats: CharacterSeat[] = [
   { name: '林乔', role: '财务顾问', mood: '冷静得近乎反常', status: '越追问账目细节，越可能露出破绽' },
   { name: '顾深', role: '律师', mood: '克制而防备', status: '对晚宴前的争执始终轻描淡写' },
   { name: '周衍', role: '线路承包代表', mood: '心虚多于愤怒', status: '一提停电时间点就会明显闪躲' },
   { name: '陆沉', role: '死者侄子', mood: '压抑冷硬', status: '像在等别人先暴露真正意图' },
-]
-
-const quickPrompts = [
-  '先完整介绍这个副本、我的身份和第一轮目标。',
-  '让在场四个人分别说一句，他们现在最想隐瞒什么。',
-  '先告诉我停电前后最关键的时间线。',
 ]
 
 const openingMessages: ChatMessage[] = [
@@ -161,7 +170,13 @@ function getInitialView(): AppView {
   if (typeof window === 'undefined') {
     return 'landing'
   }
-  return window.location.hash === '#play' ? 'game' : 'landing'
+  if (window.location.hash === '#play') {
+    return 'game'
+  }
+  if (window.location.hash === '#setup') {
+    return 'setup'
+  }
+  return 'landing'
 }
 
 function mapStructuredRole(role: ChatStreamStructuredMessage['role']): ChatMessage['role'] {
@@ -176,6 +191,58 @@ function mapStructuredKind(kind: ChatStreamStructuredMessage['kind']): ChatMessa
   if (kind === 'CLUE') return 'clue'
   if (kind === 'SCENE') return 'scene'
   return 'dialogue'
+}
+
+function getScriptDisplayMeta(script: ScriptSummaryResponse | null): ScriptDisplayMeta[] {
+  if (!script) {
+    return []
+  }
+
+  return [
+    { label: '玩法', value: script.playerModeName },
+    { label: '视角', value: script.randomRoleOnStart ? '随机身份' : '固定主视角' },
+    { label: '人数', value: `${script.selectableRoleCount}` },
+    { label: '顺序', value: `${script.unlockOrder}` },
+  ]
+}
+
+function getScriptFeatures(script: ScriptSummaryResponse | null): ScriptFeature[] {
+  if (!script) {
+    return []
+  }
+
+  if (script.scriptId === 'summer-evening-cicadas') {
+    return [
+      { title: '校园关系场', description: '围绕关系、试探和逐场推进的调查节奏展开。' },
+      { title: '固定主视角', description: '从稳定的玩家视角进入，更适合复现问题和做流程调试。' },
+      { title: '行动触发', description: '这个副本已经接好了查看地点、跟进线索之类的场景动作。' },
+    ]
+  }
+
+  if (script.scriptId === 'fog-harbor-letter') {
+    return [
+      { title: '封港旧案', description: '更强调身份误导和缓慢施压的悬疑感。' },
+      { title: '随机开局', description: '适合从不同角色视角重复测试同一个副本。' },
+      { title: '氛围优先', description: '适合验证旁白语气和线索逐步揭露的效果。' },
+    ]
+  }
+
+  return [
+    { title: '封闭山庄案', description: '结构直接，适合测试阶段推进和最终指认。' },
+    { title: '稳定基线', description: '想快速验证主流程时，这个本最适合作为默认基准。' },
+    { title: '位置压力', description: '更强调时间线、不在场证明和多人对质。' },
+  ]
+}
+
+function toUserFacingErrorMessage(message: string) {
+  const normalized = message.toLowerCase()
+  if (normalized.includes('connection reset')) {
+    return '连接中断了，请稍后再试。'
+  }
+  if (normalized.includes('timeout')) {
+    return '请求超时了，请稍后再试。'
+  }
+  return message
 }
 
 function RevealSection({ children, className, delay = 0, direction = 'up' }: RevealSectionProps) {
@@ -218,10 +285,20 @@ function App() {
   const [sessionId, setSessionId] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionSeats, setSessionSeats] = useState<SessionCharacterSeatResponse[]>([])
+  const [scripts, setScripts] = useState<ScriptSummaryResponse[]>([])
+  const [selectedScriptId, setSelectedScriptId] = useState('')
+  const [scriptsLoading, setScriptsLoading] = useState(false)
+  const [scriptsError, setScriptsError] = useState('')
+  const [isStartingScript, setIsStartingScript] = useState(false)
   const [accusedCharacterId, setAccusedCharacterId] = useState('')
   const [reasoning, setReasoning] = useState('')
   const [isAccusing, setIsAccusing] = useState(false)
   const [ending, setEnding] = useState<EndingRevealResponse | null>(null)
+  const [hints, setHints] = useState<ChatHintResponse['hints']>([])
+  const [quickActions, setQuickActions] = useState<string[]>([])
+  const [isHintsOpen, setIsHintsOpen] = useState(false)
+  const [isHintsLoading, setIsHintsLoading] = useState(false)
+  const [hintError, setHintError] = useState('')
   const [activeHotspotId, setActiveHotspotId] = useState(previewHotspots[0].id)
   const [previewPointer, setPreviewPointer] = useState({
     tiltX: '-3deg',
@@ -235,6 +312,14 @@ function App() {
     return activeHotspot
   }, [activeHotspotId])
 
+  const selectedScript = useMemo(
+    () => scripts.find((item) => item.scriptId === selectedScriptId) ?? scripts[0] ?? null,
+    [scripts, selectedScriptId],
+  )
+
+  const selectedScriptMeta = useMemo(() => getScriptDisplayMeta(selectedScript), [selectedScript])
+  const selectedScriptFeatures = useMemo(() => getScriptFeatures(selectedScript), [selectedScript])
+
   useEffect(() => {
     const handleHashChange = () => {
       setView(getInitialView())
@@ -243,6 +328,42 @@ function App() {
 
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadScripts() {
+      setScriptsLoading(true)
+      setScriptsError('')
+      try {
+        const items = await listScripts()
+        if (cancelled) {
+          return
+        }
+        setScripts(items)
+        setSelectedScriptId((current) => {
+          if (current && items.some((item) => item.scriptId === current)) {
+            return current
+          }
+          return items[0]?.scriptId ?? ''
+        })
+      } catch (error) {
+        if (!cancelled) {
+          setScriptsError(error instanceof Error ? error.message : '副本加载失败。')
+        }
+      } finally {
+        if (!cancelled) {
+          setScriptsLoading(false)
+        }
+      }
+    }
+
+    void loadScripts()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -257,6 +378,7 @@ function App() {
         const detail = await fetchSessionDetail(sessionId)
         if (!cancelled) {
           setSessionSeats(detail.characterSeats)
+          setProgress(detail.progress)
         }
       } catch {
         if (!cancelled) {
@@ -272,9 +394,19 @@ function App() {
     }
   }, [sessionId])
 
-  const openGame = (event?: MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
+  useEffect(() => {
+    if (view === 'game' && !sessionId && window.location.hash !== '#setup') {
+      window.location.hash = 'setup'
+    }
+  }, [sessionId, view])
+
+  const openSetup = (event?: MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
     event?.preventDefault()
-    window.location.hash = 'play'
+    window.location.hash = 'setup'
+  }
+
+  const openGame = (event?: MouseEvent<HTMLAnchorElement | HTMLButtonElement>) => {
+    openSetup(event)
   }
 
   const backToLanding = () => {
@@ -333,11 +465,16 @@ function App() {
     })
   }
 
-  const handleSend = async () => {
-    const trimmed = draft.trim()
+  const sendMessage = async (message: string) => {
+    const trimmed = message.trim()
     if (!trimmed || isStreaming) {
       return
     }
+
+    setHints([])
+    setHintError('')
+    setIsHintsOpen(false)
+    setQuickActions([])
 
     setMessages((current) => [
       ...current,
@@ -374,7 +511,7 @@ function App() {
                     role: 'system',
                     kind: 'dialogue',
                     tone: '错误',
-                    content: payload.message || '请求失败',
+                    content: toUserFacingErrorMessage(payload.message || '请求失败'),
                   },
                 ])
               }
@@ -389,12 +526,15 @@ function App() {
 
             if (eventName === 'message' && data.message) {
               upsertStructuredMessage(data.message)
+              if (data.message.kind === 'SCENE') {
+                setQuickActions(data.message.quickActions ?? [])
+              }
             }
           },
         },
       )
     } catch (error) {
-      const failureMessage = error instanceof Error ? error.message : '连接现场失败'
+      const failureMessage = toUserFacingErrorMessage(error instanceof Error ? error.message : '连接现场失败')
       setMessages((current) => [
         ...current,
         {
@@ -412,6 +552,14 @@ function App() {
     }
   }
 
+  const handleSend = async () => {
+    await sendMessage(draft)
+  }
+
+  const handleUseQuickAction = async (action: string) => {
+    await sendMessage(action)
+  }
+
   const handleAccuse = async () => {
     if (!sessionId || !accusedCharacterId || isAccusing) {
       return
@@ -426,7 +574,7 @@ function App() {
       })
       setEnding(reveal)
     } catch (error) {
-      const failureMessage = error instanceof Error ? error.message : '最终指认提交失败'
+      const failureMessage = toUserFacingErrorMessage(error instanceof Error ? error.message : '最终指认提交失败')
       setMessages((current) => [
         ...current,
         {
@@ -441,6 +589,102 @@ function App() {
       ])
     } finally {
       setIsAccusing(false)
+    }
+  }
+
+  const handleToggleHints = async () => {
+    if (isHintsOpen) {
+      setIsHintsOpen(false)
+      return
+    }
+
+    setIsHintsOpen(true)
+
+    if (!sessionId) {
+      setHints([])
+      setHintError('请先进入一个副本，再请求提示。')
+      return
+    }
+
+    if (hints.length || isHintsLoading) {
+      return
+    }
+
+    setIsHintsLoading(true)
+    setHintError('')
+    try {
+      const response = await fetchChatHints({ sessionId })
+      setHints(response.hints)
+    } catch (error) {
+      setHints([])
+      setHintError(error instanceof Error ? error.message : '提示加载失败。')
+    } finally {
+      setIsHintsLoading(false)
+    }
+  }
+
+  const handleUseHint = (hint: string) => {
+    setDraft(hint)
+    setIsHintsOpen(false)
+  }
+
+  const handleStartScript = async () => {
+    if (!selectedScript || isStartingScript) {
+      return
+    }
+
+    setIsStartingScript(true)
+    setScriptsError('')
+
+    try {
+      const bootstrap = await initializeRandomScriptSession({ scriptId: selectedScript.scriptId })
+      const detail = await fetchSessionDetail(bootstrap.sessionId)
+
+      setSessionId(bootstrap.sessionId)
+      setSessionSeats(detail.characterSeats)
+      setProgress(detail.progress)
+      setAccusedCharacterId('')
+      setReasoning('')
+      setEnding(null)
+      setHints([])
+      setQuickActions([])
+      setHintError('')
+      setIsHintsOpen(false)
+      setMessages([
+        {
+          id: `opening-system-${bootstrap.sessionId}`,
+          speaker: '系统',
+          speakerKey: 'system',
+          role: 'system',
+          kind: 'opening',
+          tone: '入局',
+          content: `你已进入《${bootstrap.scriptName}》，当前身份为${bootstrap.playerCharacterName}。`,
+        },
+        {
+          id: `opening-scene-${bootstrap.sessionId}`,
+          speaker: '旁白',
+          speakerKey: 'narrator',
+          role: 'narrator',
+          kind: 'scene',
+          tone: '开场',
+          content: bootstrap.openingNarration,
+        },
+        {
+          id: `opening-role-${bootstrap.sessionId}`,
+          speaker: bootstrap.playerCharacterName,
+          speakerKey: 'player',
+          role: 'player',
+          kind: 'opening',
+          tone: '身份',
+          content: bootstrap.playerRoleDescription,
+        },
+      ])
+
+      window.location.hash = 'play'
+    } catch (error) {
+      setScriptsError(error instanceof Error ? error.message : '进入副本失败。')
+    } finally {
+      setIsStartingScript(false)
     }
   }
 
@@ -468,6 +712,131 @@ function App() {
     })
   }
 
+  if (view === 'setup' || (view === 'game' && !sessionId)) {
+    return (
+      <div className="setup-shell">
+        <div className="setup-shell__curtain setup-shell__curtain--left" />
+        <div className="setup-shell__curtain setup-shell__curtain--right" />
+        <div className="setup-shell__inner">
+          <div className="setup-topbar">
+            <button type="button" className="hero__button" onClick={backToLanding}>
+              返回首页
+            </button>
+            <div className="setup-topbar__title">
+              <span>副本选择</span>
+              <strong>先从当前副本里选一个，再正式进入这一局。</strong>
+            </div>
+          </div>
+
+          <div className="setup-layout">
+            <section className="setup-panel">
+              <div className="setup-panel__header">
+                <span>副本目录</span>
+                <h2>可用副本</h2>
+              </div>
+              <div className="setup-script-list">
+                {scriptsLoading ? <p>正在加载副本...</p> : null}
+                {!scriptsLoading && !scripts.length ? <p>当前没有可用副本。</p> : null}
+                {scripts.map((script) => (
+                  <button
+                    key={script.scriptId}
+                    type="button"
+                    className={`setup-script-card ${selectedScriptId === script.scriptId ? 'setup-script-card--active' : ''}`}
+                    onClick={() => setSelectedScriptId(script.scriptId)}
+                  >
+                    <div className="setup-script-card__topline">
+                      <span>{script.playerModeName}</span>
+                      <em>{script.randomRoleOnStart ? '随机身份' : '固定身份'}</em>
+                    </div>
+                    <strong>{script.scriptName}</strong>
+                    <p>{script.summary}</p>
+                    <div className="setup-script-card__stats">
+                      <span>{script.selectableRoleCount} 个席位</span>
+                      <span>第 {script.unlockOrder} 部</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="setup-panel">
+              <div className="setup-panel__header">
+                <span>副本预览</span>
+                <h2>{selectedScript?.scriptName ?? '请选择一个副本'}</h2>
+              </div>
+              {selectedScript ? (
+                <>
+                  <div className="setup-preview-spotlight">
+                    <p>{selectedScript.openingNarration}</p>
+                  </div>
+                  <div className="setup-preview-meta">
+                    {selectedScriptMeta.map((item) => (
+                      <div key={item.label} className="setup-preview-meta__item">
+                        <span>{item.label}</span>
+                        <strong>{item.value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="setup-summary__hint">
+                    <strong>{selectedScript.playerModeName}</strong>
+                    <p>{selectedScript.summary}</p>
+                  </div>
+                  <div className="setup-feature-list">
+                    {selectedScriptFeatures.map((feature) => (
+                      <article key={feature.title} className="setup-feature-card">
+                        <strong>{feature.title}</strong>
+                        <p>{feature.description}</p>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="preview-transcript">
+                    <div className="preview-transcript__system">这里会先预览入局初始化、开场旁白和身份分配方式。</div>
+                    <div className="preview-transcript__player">调试时先选中你真正想进的那个副本，再从这里开局。</div>
+                    <div className="preview-transcript__character">这样就不会一加载就默认掉进第一个本。</div>
+                  </div>
+                </>
+              ) : (
+                <p>先选择一个副本，再在这里查看它的预览信息。</p>
+              )}
+            </section>
+
+            <aside className="setup-summary">
+              <span className="setup-summary__eyebrow">进入方式</span>
+              <h3>{selectedScript?.scriptName ?? '尚未选择副本'}</h3>
+              <p>现在会先经过选本页，而不是把用户自动丢进第一个副本。</p>
+              <div className="setup-summary__fact-grid">
+                {selectedScriptMeta.map((item) => (
+                  <div key={item.label} className="setup-summary__fact">
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+              {scriptsError ? <div className="setup-summary__error">{scriptsError}</div> : null}
+              <div className="setup-summary__actions">
+                <button
+                  type="button"
+                  className="hero__button hero__button--primary"
+                  onClick={handleStartScript}
+                  disabled={!selectedScript || scriptsLoading || isStartingScript}
+                >
+                  {isStartingScript ? '正在进入...' : '进入所选副本'}
+                </button>
+                <button type="button" className="hero__button" onClick={() => window.location.reload()}>
+                  重新加载
+                </button>
+              </div>
+              <div className="setup-summary__hint">
+                <strong>调试路径</strong>
+                <p>从当前副本里选一个，再进入对应 session，调试时路径会清楚很多。</p>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (view === 'game') {
     return (
       <GameExperience
@@ -478,9 +847,7 @@ function App() {
         onDraftChange={setDraft}
         onSend={handleSend}
         onBack={backToLanding}
-        onPrompt={setDraft}
         characterSeats={displaySeats}
-        quickPrompts={quickPrompts}
         canAccuse={canAccuse}
         accusationOptions={accusationOptions}
         accusedCharacterId={accusedCharacterId}
@@ -490,6 +857,14 @@ function App() {
         onAccuse={handleAccuse}
         isAccusing={isAccusing}
         ending={ending}
+        hints={hints}
+        quickActions={quickActions}
+        isHintsOpen={isHintsOpen}
+        isHintsLoading={isHintsLoading}
+        hintError={hintError}
+        onToggleHints={handleToggleHints}
+        onUseHint={handleUseHint}
+        onUseQuickAction={handleUseQuickAction}
       />
     )
   }
@@ -509,8 +884,11 @@ function App() {
           <nav className="hero__nav">
             <a href="#overview">概览</a>
             <a href="#mechanism">机制</a>
+            <a href="#setup" onClick={openSetup}>
+              选择副本
+            </a>
             <a href="#play" onClick={openGame}>
-              进入游戏
+              进入选本
             </a>
           </nav>
         </header>
@@ -525,7 +903,10 @@ function App() {
 
             <div className="hero__actions">
               <button type="button" className="hero__button hero__button--primary" onClick={openGame}>
-                开始游戏
+                选择副本
+              </button>
+              <button type="button" className="hero__button" onClick={openSetup}>
+                副本库
               </button>
               <a href="#mechanism" className="hero__button">
                 查看机制
@@ -745,7 +1126,7 @@ function App() {
                 <strong>直接进入当前版本</strong>
                 <p>首页负责建立这款产品的气氛和想象，进入游戏后再去承载具体副本。这样后面扩展剧本库，整体调性也不会散。</p>
                 <a href="#play" onClick={openGame}>
-                  进入游戏
+                  选择副本
                 </a>
               </div>
             </div>

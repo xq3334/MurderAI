@@ -179,7 +179,8 @@ public class StructuredMessageStreamParser {
                 state.currentKind,
                 state.currentTone,
                 delta,
-                completed
+                completed,
+                java.util.List.of()
         );
     }
 

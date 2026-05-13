@@ -1,5 +1,7 @@
 package com.codexlab.aimurder.web.dto;
 
+import java.util.List;
+
 /**
  * SSE 结构化消息体。
  *
@@ -19,6 +21,7 @@ public record ChatStreamStructuredMessage(
         StructuredMessageKind kind,
         String tone,
         String delta,
-        boolean completed
+        boolean completed,
+        List<String> quickActions
 ) {
 }

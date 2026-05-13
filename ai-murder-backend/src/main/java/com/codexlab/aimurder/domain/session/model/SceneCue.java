@@ -2,6 +2,8 @@ package com.codexlab.aimurder.domain.session.model;
 
 import com.codexlab.aimurder.domain.session.enums.SceneCueType;
 
+import java.util.List;
+
 /**
  * 场景事件。
  *
@@ -12,6 +14,7 @@ import com.codexlab.aimurder.domain.session.enums.SceneCueType;
 public record SceneCue(
         SceneCueType type,
         String title,
-        String content
+        String content,
+        List<String> quickActions
 ) {
 }

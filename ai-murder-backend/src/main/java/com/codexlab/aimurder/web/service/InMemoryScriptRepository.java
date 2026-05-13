@@ -17,6 +17,7 @@ public class InMemoryScriptRepository implements ScriptRepository {
 
     public static final String DEFAULT_SCRIPT_ID = "rainy-night-blackout";
     public static final String SECOND_SCRIPT_ID = "fog-harbor-letter";
+    public static final String THIRD_SCRIPT_ID = "summer-evening-cicadas";
 
     private final Map<String, ScriptDefinition> scriptStore = new ConcurrentHashMap<>();
 
@@ -24,8 +25,10 @@ public class InMemoryScriptRepository implements ScriptRepository {
     public void init() {
         ScriptDefinition rainyNight = buildRainyNightBlackout();
         ScriptDefinition fogHarbor = buildFogHarborLetter();
+        ScriptDefinition summerEvening = buildSummerEveningCicadas();
         scriptStore.put(rainyNight.getScriptId(), rainyNight);
         scriptStore.put(fogHarbor.getScriptId(), fogHarbor);
+        scriptStore.put(summerEvening.getScriptId(), summerEvening);
     }
 
     @Override
@@ -51,10 +54,10 @@ public class InMemoryScriptRepository implements ScriptRepository {
         scriptDefinition.setScriptName("雨夜断灯");
         scriptDefinition.setSummary("暴雨封庄后的山庄里突发停电，书房中的主人在黑暗里被杀。你将被随机分到在场嫌疑人之一，在失真口供和逐步浮出的线索中逼近真凶。");
         scriptDefinition.setOpeningNarration("暴雨压着山庄檐角，整栋宅邸像一盏随时会熄灭的旧灯。停电后的短短几分钟里，书房里倒下了今晚最不该倒下的人。");
-        scriptDefinition.setPlayerModeName("随机身份入局");
-        scriptDefinition.setPlayerModeDescription("玩家会在开局被随机分配为现场嫌疑人之一，以局中人的视角参与盘问、辩解和误导。");
+        scriptDefinition.setPlayerModeName("固定主视角 / 山庄暴雨推理");
+        scriptDefinition.setPlayerModeDescription("玩家以固定主视角进入山庄停电案，从在场嫌疑人之间的问答、时间线和线索冲突里逐步逼近真相。");
         scriptDefinition.setUnlockOrder(1);
-        scriptDefinition.setRandomRoleOnStart(true);
+        scriptDefinition.setRandomRoleOnStart(false);
         scriptDefinition.setHostCharacterId("butler");
         scriptDefinition.setOpeningInstruction("先说明暴雨封庄、停电行凶、玩家身份和第一轮调查目标，再让其他角色依次给出第一反应。");
         scriptDefinition.setNarrationInstruction("旁白只负责环境、动作和气氛，不直接交代真相。");
@@ -77,6 +80,20 @@ public class InMemoryScriptRepository implements ScriptRepository {
         butler.setPublicPersona("沉稳、克制、擅长控场");
         butler.setPublicBackstory("他熟悉山庄里每一处走廊和每个人的脾气，也最清楚今晚一旦失控会发生什么。");
         butler.setResponseStrategy("负责控场、追问和转场，不直接公布答案。");
+
+        CharacterDefinition detective = new CharacterDefinition();
+        detective.setCharacterId("detective");
+        detective.setCharacterName("顾徵");
+        detective.setIdentity("侦探");
+        detective.setRelationship("受邀来到山庄的独立调查者，负责在暴雨封庄的夜里主持这场临时审问。");
+        detective.setPublicPersona("冷静、克制、擅长从矛盾里逼出真相");
+        detective.setPublicBackstory("你并不属于山庄旧关系网，因此每个人都想借你的判断替自己洗清嫌疑，也都害怕你真的看穿他们。");
+        detective.setKnownFacts(List.of("停电后的书房是第一现场", "所有嫌疑人都各自藏着不愿明说的动机与漏洞"));
+        detective.setPublicObjective("稳定局面，厘清停电前后的时间线和每个人的关键动向。");
+        detective.setPrivateObjective("尽快把停电、账本和人际冲突拼成一条可验证的证据链。");
+        detective.setOpeningTip("你不是嫌疑人，但你说出的每一句判断，都会改变现场每个人的防御姿态。");
+        detective.setResponseStrategy("以提问、归纳和压迫式追索推动剧情，不承担嫌疑席位。");
+        detective.setSelectableByPlayer(true);
 
         CharacterDefinition linQiao = new CharacterDefinition();
         linQiao.setCharacterId("lin-qiao");
@@ -147,7 +164,7 @@ public class InMemoryScriptRepository implements ScriptRepository {
         luChen.setResponseStrategy("态度冷硬，不爱解释，但会对不公平指控产生明显反弹。");
         luChen.setSelectableByPlayer(true);
 
-        return List.of(butler, linQiao, guShen, zhouYan, luChen);
+        return List.of(butler, detective, linQiao, guShen, zhouYan, luChen);
     }
 
     private List<StageDefinition> buildRainyNightStages() {
@@ -419,6 +436,291 @@ public class InMemoryScriptRepository implements ScriptRepository {
         );
 
         return List.of(register, bell, file, photo, letter);
+    }
+
+    private ScriptDefinition buildSummerEveningCicadas() {
+        ScriptDefinition scriptDefinition = new ScriptDefinition();
+        scriptDefinition.setScriptId(THIRD_SCRIPT_ID);
+        scriptDefinition.setScriptName("蝉鸣晚自习");
+        scriptDefinition.setSummary("高二晚自习前，一张匿名纸条和一段被剪辑过的语音，把六个关系缠绕的少年少女同时推到灯下。你将固定扮演许知夏，从暗恋与误会里一路摸到每个人真正想藏住的秘密。");
+        scriptDefinition.setOpeningNarration("傍晚的热气还压在教学楼里，风扇转得很慢，窗外操场尽头的蝉声却已经吵得像一整面墙。你刚把书包塞进桌洞，就看见习题册下面有一点不该出现的银色反光。");
+        scriptDefinition.setPlayerModeName("固定主视角 / 校园关系推理");
+        scriptDefinition.setPlayerModeDescription("玩家固定扮演高二女生许知夏，在四段晚自习时序里通过追问、观察和线索拼接，逐步识别六人关系网与真正被故意引爆的矛盾。");
+        scriptDefinition.setUnlockOrder(3);
+        scriptDefinition.setRandomRoleOnStart(false);
+        scriptDefinition.setHostCharacterId("homeroom-teacher");
+        scriptDefinition.setOpeningInstruction("先交代高二晚自习前的教室氛围、玩家身份和最初异常，再让其余角色依次给出第一反应，保留真正秘密。");
+        scriptDefinition.setNarrationInstruction("旁白负责教室、走廊、广播室和课间气氛的推进，要像青春文学里的镜头，不直接替角色交代内心答案。");
+        scriptDefinition.setTruthSummary("真正故意推动这场矛盾的人是林澄。她放出匿名纸条和被剪过的语音，不是为了毁掉谁，而是为了逼周屿停止替人扛下一次违纪旧事，也逼所有人面对已经藏不下去的关系裂缝。");
+        scriptDefinition.setEndingTitle("晚自习后的名字");
+        scriptDefinition.setEndingStory("匿名纸条只是刀尖，真正被割开的，是每个人小心维持的体面。林澄故意把矛盾推到所有人都无法再装作没看见的位置，想逼周屿和叶真把那次违纪、替扛与沉默全部说出来。许知夏最终看清的，不只是自己喜欢的人，更是每个人在那段夏夜里各自背着的重量。");
+        scriptDefinition.setMinimumKeyCluesForAccusation(3);
+        scriptDefinition.setCharacters(buildSummerEveningCharacters());
+        scriptDefinition.setStages(buildSummerEveningStages());
+        scriptDefinition.setClues(buildSummerEveningClues());
+        return scriptDefinition;
+    }
+
+    private List<CharacterDefinition> buildSummerEveningCharacters() {
+        CharacterDefinition teacher = new CharacterDefinition();
+        teacher.setCharacterId("homeroom-teacher");
+        teacher.setCharacterName("陈老师");
+        teacher.setIdentity("高二二班班主任");
+        teacher.setRelationship("维持晚自习秩序的人，也是这场少年人风暴外围唯一的成人");
+        teacher.setPublicPersona("稳、克制、尽量不给任何人贴死标签");
+        teacher.setPublicBackstory("陈老师今晚不会一直站在教室里，但她的存在让所有人都还努力维持着最后一点体面。");
+        teacher.setResponseStrategy("负责控场、转场和提醒时间，不替任何学生作答。");
+
+        CharacterDefinition xuZhixia = new CharacterDefinition();
+        xuZhixia.setCharacterId("xu-zhixia");
+        xuZhixia.setCharacterName("许知夏");
+        xuZhixia.setIdentity("高二二班语文课代表");
+        xuZhixia.setRelationship("站在所有关系边缘的人，却恰好最容易看见细节");
+        xuZhixia.setPublicPersona("安静、细腻、不擅长争抢存在感");
+        xuZhixia.setPublicBackstory("你习惯把话咽回去，把喜欢藏起来，也把很多不确定的目光留给自己消化。");
+        xuZhixia.setPrivateBackstory("你暗恋周屿很久了，也隐约知道宋晚已经看出来。更重要的是，你曾在值日那天捡到一张写着“你不该替她瞒着”的便利贴，却一直没敢问出口。");
+        xuZhixia.setKnownFacts(List.of("宋晚大概知道自己的暗恋", "周屿最近状态不对", "晚自习前自己的桌洞里出现了不该有的东西"));
+        xuZhixia.setPublicObjective("先弄明白今天到底发生了什么，不要让局面完全失控。");
+        xuZhixia.setPrivateObjective("看清每个人之间真正的关系，也看清周屿、宋晚和林澄到底各自隐瞒了什么。");
+        xuZhixia.setOpeningTip("你不是最会说话的人，但你最擅长从别人漏掉的停顿里听出不对劲。");
+        xuZhixia.setResponseStrategy("玩家固定扮演角色，由玩家自由提问、判断和推进。");
+        xuZhixia.setSelectableByPlayer(true);
+
+        CharacterDefinition zhouYu = new CharacterDefinition();
+        zhouYu.setCharacterId("zhou-yu");
+        zhouYu.setCharacterName("周屿");
+        zhouYu.setIdentity("篮球队主力");
+        zhouYu.setRelationship("许知夏暗恋对象，也是所有人最容易误会成故事中心的人");
+        zhouYu.setPublicPersona("开朗、松弛、看起来总能把气氛接住");
+        zhouYu.setPublicBackstory("他在班里一直很显眼，成绩不差，又总像没什么真正过不去的事。");
+        zhouYu.setPrivateBackstory("他最近压力很大，家里关系恶化，又一直替叶真扛着一次足以影响评优的违纪记录。林澄知道这件事，并帮他一起瞒着。");
+        zhouYu.setKnownFacts(List.of("林澄知道自己的一部分难处", "叶真那次违纪不是小事", "宋晚可能留着会还原时间线的东西"));
+        zhouYu.setHiddenSecrets(List.of("替叶真顶过违纪", "知道语音被剪过，却没第一时间拆穿"));
+        zhouYu.setForbiddenDisclosures(List.of("不能主动说出自己替谁扛了违纪", "不能主动说出林澄是如何帮忙压下记录的"));
+        zhouYu.setPublicObjective("把今晚所有人关于感情的误会压下去，别让局面越闹越大。");
+        zhouYu.setPrivateObjective("守住叶真那次违纪的真相，也别让林澄因为帮忙收尾被一起拖进风暴里。");
+        zhouYu.setOpeningTip("你越想稳住局面，越容易在关键细节上露出你知道得太多。");
+        zhouYu.setResponseStrategy("前期会用轻松语气打圆场，被追到时间线和违纪细节时会明显收紧。");
+
+        CharacterDefinition linCheng = new CharacterDefinition();
+        linCheng.setCharacterId("lin-cheng");
+        linCheng.setCharacterName("林澄");
+        linCheng.setIdentity("班长");
+        linCheng.setRelationship("最擅长维持秩序的人，也是今晚真正故意推动失衡的人");
+        linCheng.setPublicPersona("理性、稳、总能先把场面接住");
+        linCheng.setPublicBackstory("她习惯记住每个人的作业、座位、值日和情绪，一直像把教室秩序缝起来的人。");
+        linCheng.setPrivateBackstory("她已经厌倦了替所有人收拾残局。匿名纸条和剪辑语音都是她放出来的，她想逼周屿停止继续替叶真扛事，也逼宋晚和程野别再靠沉默回避真相。");
+        linCheng.setKnownFacts(List.of("知道违纪记录是怎么被压住的", "知道宋晚手里还有旧纸条和照片", "知道许知夏今晚迟早会被卷进来"));
+        linCheng.setHiddenSecrets(List.of("放出匿名纸条", "故意推动了语音传播", "知道走廊争执会成为导火索"));
+        linCheng.setForbiddenDisclosures(List.of("不能主动承认自己安排了矛盾", "不能直接替周屿说出违纪真相"));
+        linCheng.setPublicObjective("把所有人从无效争吵里拉回事实，至少表面看起来如此。");
+        linCheng.setPrivateObjective("逼真正该开口的人自己说出那次违纪、那次顶替和后来每个人的沉默。");
+        linCheng.setOpeningTip("你看起来最像秩序本身，所以不到最后，没人该轻易觉得你在推波助澜。");
+        linCheng.setResponseStrategy("前期控场，中期转为反问和逼问，证据逼近时会从冷静变得尖锐。");
+        linCheng.setKiller(true);
+
+        CharacterDefinition songWan = new CharacterDefinition();
+        songWan.setCharacterId("song-wan");
+        songWan.setCharacterName("宋晚");
+        songWan.setIdentity("文艺委员");
+        songWan.setRelationship("许知夏最亲近的朋友，也是许多沉默证据的保管者");
+        songWan.setPublicPersona("温柔、安静、像总会替别人留余地");
+        songWan.setPublicBackstory("她似乎很少站到风暴中心，却总在别人说完以后，补出最让人没法忽略的一句。");
+        songWan.setPrivateBackstory("她一直知道许知夏喜欢周屿，也一直留着那些别人随手丢掉的纸条、照片和一封没送出的信。她不是故意瞒着谁，只是不知道什么时候说出来才不会伤人。");
+        songWan.setKnownFacts(List.of("知道许知夏暗恋周屿", "知道林澄和周屿之间有不止班务的秘密", "知道照片为什么会被撕掉一半"));
+        songWan.setHiddenSecrets(List.of("留着没送出的信", "留着能还原时间线的旧纸条和照片"));
+        songWan.setForbiddenDisclosures(List.of("不会主动交出那封信", "不会在前期说出许知夏的暗恋"));
+        songWan.setPublicObjective("别让今晚把所有人的关系彻底撕裂。");
+        songWan.setPrivateObjective("尽量保护许知夏，也尽量别让自己手里的东西变成伤人的证据。");
+        songWan.setOpeningTip("你知道得越多，越会在关键时刻显得犹豫。");
+        songWan.setResponseStrategy("前期温和回避，被线索点穿后会说出很关键的补充细节。");
+
+        CharacterDefinition chengYe = new CharacterDefinition();
+        chengYe.setCharacterId("cheng-ye");
+        chengYe.setCharacterName("程野");
+        chengYe.setIdentity("转学生");
+        chengYe.setRelationship("最像旁观者的人，却和其中某段旧事有真正牵连");
+        chengYe.setPublicPersona("冷淡、疏离、像对谁都没有兴趣");
+        chengYe.setPublicBackstory("他来这个班不久，和所有人都保持距离，所以任何情绪起伏都会显得格外明显。");
+        chengYe.setPrivateBackstory("他初中时认识叶真，也知道她不是那种会无缘无故失控的人。他转来之后很快发现周屿和林澄一直在共同掩盖什么，只是还没拼完整。");
+        chengYe.setKnownFacts(List.of("叶真不是无端发火", "广播室那段语音不是原始版本", "林澄今晚像在等某个时刻出现"));
+        chengYe.setHiddenSecrets(List.of("知道语音被剪过", "和叶真有初中旧识"));
+        chengYe.setForbiddenDisclosures(List.of("不会主动说出自己和叶真以前认识", "不会一开始就交代自己发现语音有问题"));
+        chengYe.setPublicObjective("先确认今晚是谁在故意引爆局面。");
+        chengYe.setPrivateObjective("别让叶真一个人扛下所有情绪反应，也别让自己和她的旧事成为新的误会。");
+        chengYe.setOpeningTip("你可以冷眼旁观，但不能像已经知道答案。");
+        chengYe.setResponseStrategy("前期像观察者，后期会精准指出别人回避的细节。");
+
+        CharacterDefinition yeZhen = new CharacterDefinition();
+        yeZhen.setCharacterId("ye-zhen");
+        yeZhen.setCharacterName("叶真");
+        yeZhen.setIdentity("体育委员");
+        yeZhen.setRelationship("看起来最像矛盾制造者，实际是被保护最久的人");
+        yeZhen.setPublicPersona("直、急、容易顶撞人");
+        yeZhen.setPublicBackstory("她不擅长把委屈藏得很深，所以很多人都以为她的问题最好懂。");
+        yeZhen.setPrivateBackstory("那次真正违纪的人是她。周屿替她顶下记录，林澄帮忙压住，宋晚无意中保留了某张能还原那晚动线的照片。她今晚发火，是因为她知道有人在拿感情线掩盖真正的问题。");
+        yeZhen.setKnownFacts(List.of("周屿替自己扛过违纪", "林澄故意在逼谁开口", "程野看得出自己不对劲"));
+        yeZhen.setHiddenSecrets(List.of("真正违纪者是自己", "撞见过林澄处理匿名纸条"));
+        yeZhen.setForbiddenDisclosures(List.of("不能主动承认违纪是自己", "不能主动暴露林澄放纸条"));
+        yeZhen.setPublicObjective("别让所有人都把今晚说成一场无聊的感情戏。");
+        yeZhen.setPrivateObjective("如果真相一定要出来，至少别再让周屿替自己站在前面。");
+        yeZhen.setOpeningTip("你的情绪是真的，所以一旦退缩，别人就会立刻知道你碰到了最痛的地方。");
+        yeZhen.setResponseStrategy("前期易爆，后期在真正被追到核心时反而会短暂沉默。");
+
+        return List.of(teacher, xuZhixia, zhouYu, linCheng, songWan, chengYe, yeZhen);
+    }
+
+    private List<StageDefinition> buildSummerEveningStages() {
+        StageDefinition stageOne = new StageDefinition();
+        stageOne.setStageId("summer-stage-1");
+        stageOne.setStageName("晚自习前的反光");
+        stageOne.setStageOrder(1);
+        stageOne.setObjective("确认匿名纸条、桌洞反光和第一轮走廊争执分别牵住了谁。");
+        stageOne.setOpeningNarration("教室里还没完全安静下来，椅脚声、翻书声和窗外蝉鸣混在一起。所有人看起来都还坐在自己的位置上，但真正先乱掉的，是那些没有被说出口的视线。");
+        stageOne.setAvailableClueIds(List.of("summer-clue-recorder-shell", "summer-clue-anonymous-note", "summer-clue-corridor-argument"));
+        stageOne.setFocusCharacterIds(List.of("zhou-yu", "lin-cheng", "song-wan", "ye-zhen"));
+        stageOne.setAdvanceKeywords(List.of("桌洞", "纸条", "反光", "语音", "谁吵架", "走廊"));
+        stageOne.setMinimumTurnsBeforeAdvance(2);
+        stageOne.setNextStageCondition("当玩家开始把匿名纸条和具体人物反应联系起来时进入下一阶段。");
+
+        StageDefinition stageTwo = new StageDefinition();
+        stageTwo.setStageId("summer-stage-2");
+        stageTwo.setStageName("被剪过的声音");
+        stageTwo.setStageOrder(2);
+        stageTwo.setObjective("把矛盾从表面的喜欢和误会，推进到谁在故意传递不完整信息。");
+        stageTwo.setOpeningNarration("真正开始发烫的不是空气，是每个人说出口之前的那半秒停顿。有人希望这只是一次感情误会，也有人拼命不让话题往更深的地方走。");
+        stageTwo.setAvailableClueIds(List.of("summer-clue-recorder-shell", "summer-clue-anonymous-note", "summer-clue-corridor-argument", "summer-clue-ripped-photo", "summer-clue-audio-fragment", "summer-clue-duty-log"));
+        stageTwo.setFocusCharacterIds(List.of("lin-cheng", "song-wan", "cheng-ye", "ye-zhen"));
+        stageTwo.setAdvanceKeywords(List.of("广播室", "剪辑", "照片", "值日", "谁知道", "原始语音"));
+        stageTwo.setMinimumTurnsBeforeAdvance(2);
+        stageTwo.setNextStageCondition("当玩家开始追问语音来源、照片残片和异常值日记录时进入下一阶段。");
+
+        StageDefinition stageThree = new StageDefinition();
+        stageThree.setStageId("summer-stage-3");
+        stageThree.setStageName("课间没有散掉");
+        stageThree.setStageOrder(3);
+        stageThree.setObjective("还原违纪旧事、顶替链条和林澄故意引爆矛盾的真正目的。");
+        stageThree.setOpeningNarration("课间铃已经响过，但没有一个人真的从这场局里走出去。窗外的风进来了，教室里的热却一点没散。");
+        stageThree.setAvailableClueIds(List.of("summer-clue-recorder-shell", "summer-clue-anonymous-note", "summer-clue-corridor-argument", "summer-clue-ripped-photo", "summer-clue-audio-fragment", "summer-clue-duty-log", "summer-clue-unsent-letter", "summer-clue-discipline-copy", "summer-clue-broadcast-trash"));
+        stageThree.setFocusCharacterIds(List.of("zhou-yu", "lin-cheng", "song-wan", "ye-zhen"));
+        stageThree.setAdvanceKeywords(List.of("违纪", "谁替谁", "保送", "没送出的信", "林澄", "为什么故意"));
+        stageThree.setMinimumTurnsBeforeAdvance(2);
+        stageThree.setNextStageCondition("当玩家把违纪、顶替和故意引爆矛盾的动机串起来时进入最终阶段。");
+
+        StageDefinition stageFour = new StageDefinition();
+        stageFour.setStageId("summer-stage-4");
+        stageFour.setStageName("晚自习后的名字");
+        stageFour.setStageOrder(4);
+        stageFour.setObjective("完成最终判断，指出谁故意推动了这场矛盾，并解释她真正想逼出的真相。");
+        stageFour.setOpeningNarration("现在已经没有人能退回晚自习开始以前。真正要落下来的，不是谁喜欢谁的答案，而是谁把今晚推到了这里。");
+        stageFour.setAvailableClueIds(List.of("summer-clue-recorder-shell", "summer-clue-anonymous-note", "summer-clue-corridor-argument", "summer-clue-ripped-photo", "summer-clue-audio-fragment", "summer-clue-duty-log", "summer-clue-unsent-letter", "summer-clue-discipline-copy", "summer-clue-broadcast-trash", "summer-clue-teacher-note", "summer-clue-timeline-sketch", "summer-clue-full-audio"));
+        stageFour.setFocusCharacterIds(List.of("lin-cheng", "zhou-yu", "ye-zhen"));
+        stageFour.setAdvanceKeywords(List.of("最终指认", "故意引爆", "幕后的人", "就是林澄"));
+        stageFour.setMinimumTurnsBeforeAdvance(99);
+        stageFour.setNextStageCondition("玩家完成最终指认后结束。");
+
+        return List.of(stageOne, stageTwo, stageThree, stageFour);
+    }
+
+    private List<ClueDefinition> buildSummerEveningClues() {
+        ClueDefinition recorderShell = clue(
+                "summer-clue-recorder-shell", "银色录音笔外壳", ClueType.PHYSICAL,
+                "许知夏桌洞深处藏着一个银色录音笔外壳，边缘有被仓促拆开的划痕，像有人只拿走了里面真正重要的部分。",
+                "提示今晚的信息传播并不自然，有人提前处理过音频相关物件。",
+                "summer-stage-1", List.of("lin-cheng", "song-wan", "cheng-ye"), false
+        );
+
+        ClueDefinition anonymousNote = clue(
+                "summer-clue-anonymous-note", "匿名纸条", ClueType.DOCUMENT,
+                "纸条上只有一句话：'你以为他真的喜欢你吗？' 字迹故意压得很平，像怕别人一眼认出来。",
+                "把所有人注意力先引向感情误会，为真正的矛盾打掩护。",
+                "summer-stage-1", List.of("xu-zhixia", "zhou-yu", "lin-cheng"), false
+        );
+
+        ClueDefinition corridorArgument = clue(
+                "summer-clue-corridor-argument", "走廊争执", ClueType.TESTIMONY,
+                "晚自习前有人听见叶真和周屿在走廊压低声音争执，叶真说过一句：'你别再替我装没事。'",
+                "说明两人争执的核心并不是暧昧，而是某件已经持续了一段时间的隐瞒。",
+                "summer-stage-1", List.of("zhou-yu", "ye-zhen"), true
+        );
+
+        ClueDefinition rippedPhoto = clue(
+                "summer-clue-ripped-photo", "被撕开的合照", ClueType.DOCUMENT,
+                "后排储物柜里藏着半张旧合照，残留部分能看出周屿、叶真和宋晚都在，另一半像是被人专门撕走了。",
+                "说明有人在主动切断能还原旧时间线的物证。",
+                "summer-stage-2", List.of("song-wan", "zhou-yu", "ye-zhen"), false
+        );
+
+        ClueDefinition audioFragment = clue(
+                "summer-clue-audio-fragment", "被剪过的语音片段", ClueType.DOCUMENT,
+                "流出来的语音里只剩一句：'你就是仗着她不会说。' 结尾处的环境底噪断得很生硬，明显不是完整原件。",
+                "把矛盾从单纯感情戏引向“谁被利用、谁被迫沉默”。",
+                "summer-stage-2", List.of("lin-cheng", "cheng-ye", "ye-zhen"), true
+        );
+
+        ClueDefinition dutyLog = clue(
+                "summer-clue-duty-log", "值日表涂改痕迹", ClueType.DOCUMENT,
+                "值日表右下角有一次被擦掉又重写的记录，那天本该留下来锁广播室的人并不是后来登记的那个名字。",
+                "说明广播室和语音传播链路里有人替换过行动顺序。",
+                "summer-stage-2", List.of("lin-cheng", "song-wan"), false
+        );
+
+        ClueDefinition unsentLetter = clue(
+                "summer-clue-unsent-letter", "没送出的信", ClueType.DOCUMENT,
+                "天台门口夹层里藏着一封没送出的信，开头写着：'如果你再替我扛一次，我以后连看你都不敢。'",
+                "直接把矛头指向“替谁扛”的旧事，而不是谁喜欢谁。",
+                "summer-stage-3", List.of("zhou-yu", "ye-zhen"), true
+        );
+
+        ClueDefinition disciplineCopy = clue(
+                "summer-clue-discipline-copy", "旧违纪单复印件", ClueType.DOCUMENT,
+                "违纪单复印件上的名字是周屿，但时间、地点和旁边潦草添上的备注都与叶真那晚的行动轨迹更吻合。",
+                "说明违纪责任存在顶替，周屿不是表面上那次事件的真正当事人。",
+                "summer-stage-3", List.of("zhou-yu", "ye-zhen", "lin-cheng"), true
+        );
+
+        ClueDefinition broadcastTrash = clue(
+                "summer-clue-broadcast-trash", "广播室回收站记录", ClueType.DOCUMENT,
+                "广播室电脑回收站里有一段被删除的音频缓存，创建时间恰好在晚自习前十分钟，文件名带着班级缩写。",
+                "坐实语音是被人为处理后投放，不是自然流出。",
+                "summer-stage-3", List.of("lin-cheng", "cheng-ye"), false
+        );
+
+        ClueDefinition teacherNote = clue(
+                "summer-clue-teacher-note", "班长记录本备注页", ClueType.DOCUMENT,
+                "林澄的记录本边页写着一行很轻的字：'再拖下去，所有人都会一起坏掉。'",
+                "揭示林澄的动机更接近逼真相浮出，而不是单纯伤害谁。",
+                "summer-stage-4", List.of("lin-cheng"), false
+        );
+
+        ClueDefinition timelineSketch = clue(
+                "summer-clue-timeline-sketch", "课间时间线草图", ClueType.PHYSICAL,
+                "宋晚留下的一张草图把晚自习前后几个人的动线全画了出来，广播室、走廊和储物柜在同一时间段被反复圈出。",
+                "让玩家能把零散细节拼成一条完整的行动链。",
+                "summer-stage-4", List.of("song-wan", "lin-cheng", "zhou-yu", "ye-zhen"), false
+        );
+
+        ClueDefinition fullAudio = clue(
+                "summer-clue-full-audio", "原始完整语音", ClueType.DOCUMENT,
+                "完整语音里真正的话是：'你就是仗着她不会说，才一直替她把那件事压下去。' 说话的人是林澄，她的语气更像逼问，不像挑拨。",
+                "最终指向林澄才是主动引爆矛盾的人，但她在逼出的是真相，不是八卦。",
+                "summer-stage-4", List.of("lin-cheng", "zhou-yu", "ye-zhen"), true
+        );
+
+        return List.of(
+                recorderShell,
+                anonymousNote,
+                corridorArgument,
+                rippedPhoto,
+                audioFragment,
+                dutyLog,
+                unsentLetter,
+                disciplineCopy,
+                broadcastTrash,
+                teacherNote,
+                timelineSketch,
+                fullAudio
+        );
     }
 
     private ClueDefinition clue(

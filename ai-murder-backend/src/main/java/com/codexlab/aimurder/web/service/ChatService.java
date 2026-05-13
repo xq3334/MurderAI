@@ -11,12 +11,15 @@ import com.codexlab.aimurder.web.dto.ChatStreamStructuredMessage;
 import com.codexlab.aimurder.web.dto.Result;
 import com.codexlab.aimurder.web.dto.StructuredMessageKind;
 import com.codexlab.aimurder.web.dto.StructuredMessageRole;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
 import java.io.IOException;
+import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -28,6 +31,8 @@ import java.util.concurrent.ExecutorService;
  */
 @Service
 public class ChatService {
+
+    private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
     private static final String GAME_SYSTEM_PROMPT = """
             你是一个高度稳定的中文互动叙事模型，当前服务于 AI 剧本杀系统。
@@ -80,16 +85,21 @@ public class ChatService {
         ChatStreamProgressResponse progress = gameSessionService.buildProgress(sessionId);
         List<ChatContextMessage> history = gameSessionService.getMessageHistory(sessionId);
         String prompt = buildHintPrompt(session, progress, history);
-        String rawReply = chatClient.prompt()
-                .user(prompt)
-                .call()
-                .content();
+        try {
+            String rawReply = chatClient.prompt()
+                    .user(prompt)
+                    .call()
+                    .content();
 
-        List<String> hints = normalizeHints(rawReply);
-        if (hints.isEmpty()) {
-            hints = fallbackHints(progress);
+            List<String> hints = normalizeHints(rawReply);
+            if (hints.isEmpty()) {
+                hints = fallbackHints(progress);
+            }
+            return new ChatHintResponse(sessionId, hints);
+        } catch (Exception exception) {
+            log.warn("Hint generation failed for session {}: {}", sessionId, summarizeException(exception), exception);
+            return new ChatHintResponse(sessionId, fallbackHints(progress));
         }
-        return new ChatHintResponse(sessionId, hints);
     }
 
     /**
@@ -153,11 +163,9 @@ public class ChatService {
             )));
             emitter.complete();
         } catch (Exception exception) {
+            log.error("Chat streaming failed for session {}: {}", sessionId, summarizeException(exception), exception);
             try {
-                String errorMessage = exception.getMessage() == null || exception.getMessage().isBlank()
-                        ? "模型连接中断，请稍后重试"
-                        : exception.getMessage();
-                sendEvent(emitter, "error", Result.failure("STREAM_ERROR", errorMessage));
+                sendEvent(emitter, "error", Result.failure("STREAM_ERROR", toUserFacingErrorMessage(exception)));
             } catch (IOException ignored) {
             }
             emitter.complete();
@@ -232,8 +240,9 @@ public class ChatService {
                 StructuredMessageRole.SYSTEM,
                 StructuredMessageKind.CLUE,
                 clue.isKeyClue() ? "关键线索" : "公开线索",
-                clue.getClueName() + "：" + clue.getContent(),
-                true
+                clue.getClueName() + "?" + clue.getContent(),
+                true,
+                List.of()
         );
         sendStructuredMessageEvent(emitter, sessionId, structuredMessage);
     }
@@ -254,7 +263,8 @@ public class ChatService {
                 StructuredMessageKind.SCENE,
                 resolveSceneTone(sceneCue.type(), sceneCue.title()),
                 sceneCue.content(),
-                true
+                true,
+                sceneCue.quickActions() == null ? List.of() : sceneCue.quickActions()
         );
         sendStructuredMessageEvent(emitter, sessionId, structuredMessage);
     }
@@ -351,6 +361,34 @@ public class ChatService {
     }
 
     private List<String> fallbackHints(ChatStreamProgressResponse progress) {
+        if (progress.scriptName() != null && progress.scriptName().contains("?????")) {
+            if (progress.currentStageOrder() >= progress.totalStages()) {
+                return List.of(
+                        "???????????????????",
+                        "?????????????????????",
+                        "?????????????????????"
+                );
+            }
+            if (progress.currentStageOrder() >= 3) {
+                return List.of(
+                        "?????????????????",
+                        "??????????????????",
+                        "??????????????????"
+                );
+            }
+            if (progress.currentStageOrder() >= 2) {
+                return List.of(
+                        "???????????????????",
+                        "???????????????",
+                        "????????????????????"
+                );
+            }
+            return List.of(
+                    "????????????????",
+                    "???????????????????",
+                    "?????????????????"
+            );
+        }
         if (progress.currentStageOrder() >= progress.totalStages()) {
             return List.of(
                     "把现在最关键的三条证据串起来，它们共同指向谁？",
@@ -371,4 +409,31 @@ public class ChatService {
                 "先帮我梳理案发前后最关键的时间线，指出第一处明显矛盾。"
         );
     }
+    private String toUserFacingErrorMessage(Throwable throwable) {
+        Throwable rootCause = findRootCause(throwable);
+        String message = rootCause.getMessage() == null ? "" : rootCause.getMessage().trim().toLowerCase();
+
+        if (rootCause instanceof SocketException || message.contains("connection reset")) {
+            return "??????????????????";
+        }
+        if (message.contains("timeout")) {
+            return "????????????????";
+        }
+        return "??????????????????";
+    }
+
+    private Throwable findRootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
+    private String summarizeException(Throwable throwable) {
+        Throwable rootCause = findRootCause(throwable);
+        String message = rootCause.getMessage();
+        return rootCause.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
+    }
+
 }
