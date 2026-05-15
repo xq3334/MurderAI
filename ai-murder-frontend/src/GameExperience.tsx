@@ -14,6 +14,7 @@ type ChatMessage = {
 type GameExperienceProps = {
   messages: ChatMessage[]
   progress: ChatStreamProgressResponse | null
+  themeKey: 'default' | 'manor' | 'campus' | 'harbor'
   draft: string
   isStreaming: boolean
   onDraftChange: (value: string) => void
@@ -128,6 +129,7 @@ function resolveHintTheme(progress: ChatStreamProgressResponse | null): HintThem
 export function GameExperience({
   messages,
   progress,
+  themeKey,
   draft,
   isStreaming,
   onDraftChange,
@@ -195,7 +197,7 @@ export function GameExperience({
   }
 
   return (
-    <div className="game-shell">
+    <div className={`game-shell game-shell--${themeKey}`}>
       <div className="game-shell__curtain game-shell__curtain--left" />
       <div className="game-shell__curtain game-shell__curtain--right" />
       <div className="game-shell__curtain-glow" />
@@ -203,7 +205,7 @@ export function GameExperience({
       <div className="game-shell__veil game-shell__veil--right" />
       <header className="game-topbar">
         <button type="button" className="game-topbar__back" onClick={onBack}>
-          返回首页
+          返回副本库
         </button>
         <div className="game-topbar__title">
           <span>Night Session</span>
@@ -473,7 +475,7 @@ export function GameExperience({
                   <div className="ending-reveal__footer">
                     <p>{ending.reasoningSummary}</p>
                     <button type="button" className="ending-reveal__button" onClick={onBack}>
-                      返回首页
+                      返回副本库
                     </button>
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import type { KeyboardEvent } from 'react'
 import {
   fetchChatHints,
   fetchSessionDetail,
@@ -61,6 +62,8 @@ type ScriptFeature = {
   title: string
   description: string
 }
+
+type GameThemeKey = 'default' | 'manor' | 'campus' | 'harbor'
 
 const characterSeats: CharacterSeat[] = [
   { name: '林乔', role: '财务顾问', mood: '冷静得近乎反常', status: '越追问账目细节，越可能露出破绽' },
@@ -245,6 +248,26 @@ function toUserFacingErrorMessage(message: string) {
   return message
 }
 
+function resolveGameTheme(scriptId: string | null | undefined): GameThemeKey {
+  if (scriptId === 'summer-evening-cicadas') {
+    return 'campus'
+  }
+
+  if (scriptId === 'fog-harbor-letter') {
+    return 'harbor'
+  }
+
+  if (scriptId === 'rainy-night-blackout') {
+    return 'manor'
+  }
+
+  return 'default'
+}
+
+function resolveSetupCardTheme(scriptId: string): GameThemeKey {
+  return resolveGameTheme(scriptId)
+}
+
 function RevealSection({ children, className, delay = 0, direction = 'up' }: RevealSectionProps) {
   const ref = useRef<HTMLDivElement | null>(null)
   const [visible, setVisible] = useState(false)
@@ -283,6 +306,7 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(openingMessages)
   const [progress, setProgress] = useState<ChatStreamProgressResponse | null>(null)
   const [sessionId, setSessionId] = useState('')
+  const [currentScriptId, setCurrentScriptId] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionSeats, setSessionSeats] = useState<SessionCharacterSeatResponse[]>([])
   const [scripts, setScripts] = useState<ScriptSummaryResponse[]>([])
@@ -319,6 +343,7 @@ function App() {
 
   const selectedScriptMeta = useMemo(() => getScriptDisplayMeta(selectedScript), [selectedScript])
   const selectedScriptFeatures = useMemo(() => getScriptFeatures(selectedScript), [selectedScript])
+  const currentThemeKey = useMemo(() => resolveGameTheme(currentScriptId || selectedScript?.scriptId), [currentScriptId, selectedScript])
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -411,6 +436,10 @@ function App() {
 
   const backToLanding = () => {
     window.location.hash = ''
+  }
+
+  const backToScriptLibrary = () => {
+    window.location.hash = 'setup'
   }
 
   const displaySeats = useMemo(() => {
@@ -629,7 +658,7 @@ function App() {
   }
 
   const handleStartScript = async () => {
-    if (!selectedScript || isStartingScript) {
+    if (!selectedScript || scriptsLoading || isStartingScript) {
       return
     }
 
@@ -641,6 +670,7 @@ function App() {
       const detail = await fetchSessionDetail(bootstrap.sessionId)
 
       setSessionId(bootstrap.sessionId)
+      setCurrentScriptId(bootstrap.scriptId)
       setSessionSeats(detail.characterSeats)
       setProgress(detail.progress)
       setAccusedCharacterId('')
@@ -688,6 +718,15 @@ function App() {
     }
   }
 
+  const handlePreviewEnter = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return
+    }
+
+    event.preventDefault()
+    void handleStartScript()
+  }
+
   const handlePreviewMove = (event: MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     const x = (event.clientX - rect.left) / rect.width
@@ -729,7 +768,7 @@ function App() {
           </div>
 
           <div className="setup-layout">
-            <section className="setup-panel">
+            <section className="setup-panel setup-panel--catalog">
               <div className="setup-panel__header">
                 <span>副本目录</span>
                 <h2>可用副本</h2>
@@ -741,7 +780,7 @@ function App() {
                   <button
                     key={script.scriptId}
                     type="button"
-                    className={`setup-script-card ${selectedScriptId === script.scriptId ? 'setup-script-card--active' : ''}`}
+                    className={`setup-script-card setup-script-card--${resolveSetupCardTheme(script.scriptId)} ${selectedScriptId === script.scriptId ? 'setup-script-card--active' : ''}`}
                     onClick={() => setSelectedScriptId(script.scriptId)}
                   >
                     <div className="setup-script-card__topline">
@@ -759,7 +798,16 @@ function App() {
               </div>
             </section>
 
-            <section className="setup-panel">
+            <section
+              className={`setup-panel setup-panel--preview ${selectedScript ? 'setup-panel--clickable' : ''}`}
+              role={selectedScript ? 'button' : undefined}
+              tabIndex={selectedScript ? 0 : undefined}
+              onClick={() => {
+                void handleStartScript()
+              }}
+              onKeyDown={handlePreviewEnter}
+              aria-disabled={!selectedScript || scriptsLoading || isStartingScript}
+            >
               <div className="setup-panel__header">
                 <span>副本预览</span>
                 <h2>{selectedScript?.scriptName ?? '请选择一个副本'}</h2>
@@ -789,6 +837,7 @@ function App() {
                       </article>
                     ))}
                   </div>
+                  {scriptsError ? <div className="setup-summary__error">{scriptsError}</div> : null}
                   <div className="preview-transcript">
                     <div className="preview-transcript__system">这里会先预览入局初始化、开场旁白和身份分配方式。</div>
                     <div className="preview-transcript__player">调试时先选中你真正想进的那个副本，再从这里开局。</div>
@@ -800,37 +849,6 @@ function App() {
               )}
             </section>
 
-            <aside className="setup-summary">
-              <span className="setup-summary__eyebrow">进入方式</span>
-              <h3>{selectedScript?.scriptName ?? '尚未选择副本'}</h3>
-              <p>现在会先经过选本页，而不是把用户自动丢进第一个副本。</p>
-              <div className="setup-summary__fact-grid">
-                {selectedScriptMeta.map((item) => (
-                  <div key={item.label} className="setup-summary__fact">
-                    <span>{item.label}</span>
-                    <strong>{item.value}</strong>
-                  </div>
-                ))}
-              </div>
-              {scriptsError ? <div className="setup-summary__error">{scriptsError}</div> : null}
-              <div className="setup-summary__actions">
-                <button
-                  type="button"
-                  className="hero__button hero__button--primary"
-                  onClick={handleStartScript}
-                  disabled={!selectedScript || scriptsLoading || isStartingScript}
-                >
-                  {isStartingScript ? '正在进入...' : '进入所选副本'}
-                </button>
-                <button type="button" className="hero__button" onClick={() => window.location.reload()}>
-                  重新加载
-                </button>
-              </div>
-              <div className="setup-summary__hint">
-                <strong>调试路径</strong>
-                <p>从当前副本里选一个，再进入对应 session，调试时路径会清楚很多。</p>
-              </div>
-            </aside>
           </div>
         </div>
       </div>
@@ -842,11 +860,12 @@ function App() {
       <GameExperience
         messages={messages}
         progress={progress}
+        themeKey={currentThemeKey}
         draft={draft}
         isStreaming={isStreaming}
         onDraftChange={setDraft}
         onSend={handleSend}
-        onBack={backToLanding}
+        onBack={backToScriptLibrary}
         characterSeats={displaySeats}
         canAccuse={canAccuse}
         accusationOptions={accusationOptions}
